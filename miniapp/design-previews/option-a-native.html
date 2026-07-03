@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Варіант A — Telegram Native</title>
+<style>
+  :root {
+    --accent: #3390ec;
+    --bg: #f4f4f5;
+    --surface: #ffffff;
+    --text: #17181a;
+    --muted: #8a8a8e;
+    --border: #e4e4e6;
+    --danger: #ff3b30;
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    margin: 0;
+    padding: 0 0 24px;
+  }
+  .topbar {
+    background: var(--surface);
+    padding: 18px 16px 14px;
+    border-bottom: 1px solid var(--border);
+    position: sticky;
+    top: 0;
+  }
+  .topbar h1 { margin: 0; font-size: 19px; font-weight: 600; }
+  .topbar .subtitle { color: var(--muted); font-size: 13px; margin-top: 2px; }
+
+  .section { padding: 18px 16px 0; }
+  .card {
+    background: var(--surface);
+    border-radius: 14px;
+    padding: 14px 16px;
+    margin-bottom: 12px;
+    border: 1px solid var(--border);
+  }
+  .card h2 {
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    color: var(--muted);
+    margin: 0 0 10px;
+    font-weight: 600;
+  }
+
+  .profile-row { display: flex; align-items: center; gap: 12px; }
+  .avatar {
+    width: 44px; height: 44px; border-radius: 50%;
+    background: linear-gradient(135deg, var(--accent), #6ac1ff);
+    display: flex; align-items: center; justify-content: center;
+    color: #fff; font-weight: 600; font-size: 16px; flex-shrink: 0;
+  }
+  .profile-name { font-weight: 600; font-size: 15px; }
+  .profile-role { color: var(--muted); font-size: 13px; margin-top: 1px; }
+  .link-btn {
+    margin-left: auto; color: var(--accent); font-size: 14px; font-weight: 500;
+    background: none; border: none; padding: 6px 4px; width: auto;
+  }
+
+  input {
+    width: 100%; padding: 11px 12px; margin: 0 0 10px;
+    border: 1px solid var(--border); border-radius: 10px;
+    font-size: 14px; background: #fafafa;
+  }
+  input:focus { outline: none; border-color: var(--accent); background: #fff; }
+
+  button.primary {
+    width: 100%; padding: 12px; background: var(--accent); color: #fff;
+    border: none; border-radius: 10px; font-size: 15px; font-weight: 600;
+  }
+  button.primary:active { opacity: 0.85; }
+
+  ul.list { list-style: none; margin: 0; padding: 0; }
+  ul.list li {
+    display: flex; align-items: center; gap: 10px;
+    padding: 11px 0; border-bottom: 1px solid var(--border);
+  }
+  ul.list li:last-child { border-bottom: none; }
+  .group-dot {
+    width: 8px; height: 8px; border-radius: 50%; background: var(--accent); flex-shrink: 0;
+  }
+  .group-dot.alert { background: var(--danger); }
+  .group-title { font-size: 15px; font-weight: 500; flex: 1; }
+  .badge {
+    font-size: 11px; background: #ffe8e6; color: var(--danger);
+    padding: 3px 8px; border-radius: 20px; font-weight: 600;
+  }
+  .chevron { color: var(--muted); font-size: 14px; }
+
+  .member-row { display: flex; align-items: center; gap: 10px; padding: 9px 0; border-bottom: 1px solid var(--border); }
+  .member-row:last-child { border-bottom: none; }
+  .member-avatar {
+    width: 32px; height: 32px; border-radius: 50%; background: #eef2f7;
+    display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 600; color: var(--muted);
+  }
+  .member-name { font-size: 14px; font-weight: 500; }
+  .member-tag { font-size: 12px; color: var(--muted); }
+
+  .status { font-size: 13px; color: var(--muted); margin-top: 8px; text-align: center; }
+</style>
+</head>
+<body>
+
+  <div class="topbar">
+    <h1>MoveNation Assistant</h1>
+    <div class="subtitle">Керування групами та клієнтами</div>
+  </div>
+
+  <div class="section">
+    <div class="card">
+      <div class="profile-row">
+        <div class="avatar">ОП</div>
+        <div>
+          <div class="profile-name">Олег Петренко</div>
+          <div class="profile-role">Менеджер</div>
+        </div>
+        <button class="link-btn">Змінити</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Створити групу</h2>
+      <input type="text" placeholder="Назва групи" />
+      <button class="primary">Створити</button>
+    </div>
+
+    <div class="card">
+      <h2>Мої групи</h2>
+      <ul class="list">
+        <li><span class="group-dot alert"></span><span class="group-title">Переїзд — вул. Хрещатик 22</span><span class="badge">очікує</span><span class="chevron">›</span></li>
+        <li><span class="group-dot"></span><span class="group-title">Офіс Nova Pay — 3 поверх</span><span class="chevron">›</span></li>
+        <li><span class="group-dot"></span><span class="group-title">Квартира, вул. Гончара 5</span><span class="chevron">›</span></li>
+      </ul>
+    </div>
+
+    <div class="card">
+      <h2>Команда групи — Хрещатик 22</h2>
+      <div class="member-row">
+        <div class="member-avatar">МК</div>
+        <div><div class="member-name">Марина Ковальчук</div><div class="member-tag">@marina_k · клієнт</div></div>
+      </div>
+      <div class="member-row">
+        <div class="member-avatar">ВЛ</div>
+        <div><div class="member-name">Віктор Лисенко</div><div class="member-tag">@vlysenko · вантажник</div></div>
+      </div>
+
+      <div style="margin-top:14px;">
+        <input type="text" placeholder="@username клієнта" />
+        <button class="primary">Додати клієнта</button>
+      </div>
+      <div class="status">Клієнта додано.</div>
+    </div>
+  </div>
+
+</body>
+</html>

@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Варіант B — з розбиттям на вкладки</title>
+<style>
+  :root {
+    --accent1: #6d5bff;
+    --accent2: #00c2b8;
+    --bg: #f6f7fb;
+    --surface: #ffffff;
+    --text: #1c1e29;
+    --muted: #8d90a3;
+    --border: #edeef4;
+    --danger: #ff5c6a;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    margin: 0;
+    height: 100%;
+    overflow: hidden;
+  }
+  #app { position: relative; height: 100vh; overflow: hidden; }
+
+  .screen {
+    position: absolute; inset: 0;
+    overflow-y: auto;
+    padding-bottom: 96px;
+    transition: transform 0.25s ease;
+  }
+  .screen.hidden { display: none; }
+
+  /* --- tab screens (groups / profile) --- */
+  .hero {
+    background: linear-gradient(135deg, var(--accent1), var(--accent2));
+    padding: 22px 16px 34px;
+    color: #fff;
+    border-radius: 0 0 24px 24px;
+  }
+  .hero .eyebrow { font-size: 11.5px; opacity: 0.85; letter-spacing: 0.05em; text-transform: uppercase; font-weight: 700; }
+  .hero h1 { margin: 4px 0 0; font-size: 20px; font-weight: 700; }
+
+  .content { padding: 0 16px; margin-top: -20px; }
+  .card {
+    background: var(--surface);
+    border-radius: 18px;
+    padding: 16px;
+    margin-bottom: 14px;
+    box-shadow: 0 8px 24px rgba(30, 20, 90, 0.06);
+  }
+  .card h2 {
+    font-size: 13px; font-weight: 700; margin: 0 0 12px;
+    display: flex; align-items: center; gap: 6px;
+  }
+  .card h2 .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent1); }
+
+  input {
+    width: 100%; padding: 12px 14px; margin: 0 0 10px;
+    border: 1.5px solid var(--border); border-radius: 12px;
+    font-size: 14px; background: #fbfbfe;
+  }
+  input:focus { outline: none; border-color: var(--accent1); }
+
+  button.primary {
+    width: 100%; padding: 13px; color: #fff;
+    background: linear-gradient(135deg, var(--accent1), var(--accent2));
+    border: none; border-radius: 12px; font-size: 14px; font-weight: 700;
+    transition: opacity 0.15s ease;
+  }
+  button.primary:active { opacity: 0.85; }
+
+  ul.list { list-style: none; margin: 0; padding: 0; }
+  ul.list li {
+    display: flex; align-items: center; gap: 10px;
+    padding: 12px; border-radius: 12px; margin-bottom: 8px;
+    background: #fafaff; cursor: pointer;
+  }
+  ul.list li:active { background: #f1f0ff; }
+  ul.list li:last-child { margin-bottom: 0; }
+  .group-title { font-size: 14px; font-weight: 600; flex: 1; }
+  .group-sub { font-size: 12px; color: var(--muted); }
+  .badge {
+    font-size: 11px; background: #ffe3e6; color: var(--danger);
+    padding: 4px 9px; border-radius: 20px; font-weight: 700;
+  }
+  .icon-pill {
+    width: 34px; height: 34px; border-radius: 10px; background: #eee9ff;
+    display: flex; align-items: center; justify-content: center; color: var(--accent1); flex-shrink: 0;
+  }
+  .icon-pill svg { width: 17px; height: 17px; }
+  .chevron { color: var(--muted); display: flex; align-items: center; }
+  .chevron svg { width: 16px; height: 16px; }
+
+  /* --- profile tab --- */
+  .profile-hero-card {
+    display: flex; align-items: center; gap: 12px;
+    background: rgba(255,255,255,0.14); border-radius: 16px; padding: 14px;
+    backdrop-filter: blur(6px); margin-top: 16px;
+  }
+  .avatar {
+    width: 46px; height: 46px; border-radius: 50%;
+    background: #fff; color: var(--accent1);
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 700; font-size: 16px; flex-shrink: 0;
+  }
+  .profile-hero-card .name { font-weight: 700; font-size: 15px; }
+  .profile-hero-card .role { font-size: 12px; opacity: 0.85; }
+
+  .settings-row {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 13px 2px; border-bottom: 1px solid var(--border);
+    font-size: 14px;
+  }
+  .settings-row:last-child { border-bottom: none; }
+  .settings-row .label { color: var(--muted); font-size: 12px; }
+  .settings-row button {
+    width: auto; background: none; color: var(--accent1); border: none;
+    font-size: 13.5px; font-weight: 700; padding: 4px;
+  }
+  .settings-row button:active { opacity: 0.6; }
+  .status-pill {
+    font-size: 11px; font-weight: 700; padding: 3px 9px; border-radius: 20px;
+    background: #e6faf5; color: #00988f;
+  }
+
+  /* --- group detail screen --- */
+  .detail-header {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    padding: 18px 16px 26px;
+    background: linear-gradient(135deg, var(--accent1), var(--accent2));
+    border-radius: 0 0 24px 24px;
+    color: #fff;
+  }
+  .back-btn {
+    width: 34px; height: 34px; border-radius: 10px; background: rgba(255,255,255,0.2);
+    display: flex; align-items: center; justify-content: center;
+    color: #fff; border: none; flex-shrink: 0;
+    transition: background 0.15s ease;
+  }
+  .back-btn:active { background: rgba(255,255,255,0.32); }
+  .back-btn svg { width: 18px; height: 18px; }
+  .detail-header .title-block { text-align: right; }
+  .detail-header h1 { font-size: 20px; margin: 0; font-weight: 700; color: #fff; }
+  .detail-header .sub { font-size: 12px; color: rgba(255,255,255,0.85); margin-top: 3px; }
+
+  .member-row { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px dashed var(--border); }
+  .member-row:last-child { border-bottom: none; }
+  .member-avatar {
+    width: 32px; height: 32px; border-radius: 10px; background: #eee9ff;
+    display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; color: var(--accent1);
+  }
+  .member-name { font-size: 14px; font-weight: 600; }
+  .member-tag { font-size: 12px; color: var(--muted); }
+  .role-badge {
+    display: inline-block; font-size: 11px; font-weight: 700;
+    padding: 4px 9px; border-radius: 20px;
+    background: #e3faf0; color: #00a173;
+  }
+  .status { font-size: 12.5px; color: #00988f; margin-top: 10px; text-align: center; font-weight: 600; }
+
+  /* --- bottom tab bar --- */
+  .tabbar {
+    position: absolute; left: 16px; right: 16px; bottom: 14px;
+    background: var(--surface); border-radius: 20px;
+    display: flex; gap: 6px; padding: 7px;
+    box-shadow: 0 14px 34px rgba(30, 20, 90, 0.14);
+    z-index: 10;
+  }
+  .tab-btn {
+    flex: 1; background: none; border: none; display: flex; flex-direction: column;
+    align-items: center; gap: 3px; padding: 8px 0; border-radius: 14px;
+    color: var(--muted); font-size: 11px; font-weight: 600;
+    transition: background 0.15s ease, color 0.15s ease;
+  }
+  .tab-btn .icon { display: flex; }
+  .tab-btn .icon svg { width: 20px; height: 20px; }
+  .tab-btn.active { color: var(--accent1); background: #f4f3ff; }
+  .tab-btn:active { opacity: 0.6; }
+</style>
+</head>
+<body>
+
+<div id="app">
+
+  <!-- TAB 1: Групи -->
+  <div class="screen" id="screen-groups">
+    <div class="hero">
+      <div class="eyebrow">MoveNation Assistant</div>
+      <h1>Мої групи</h1>
+    </div>
+    <div class="content">
+      <div class="card">
+        <h2><span class="dot"></span>Створити групу</h2>
+        <input type="text" placeholder="Назва групи" />
+        <button class="primary">Створити</button>
+      </div>
+
+      <div class="card">
+        <h2><span class="dot"></span>Активні групи</h2>
+        <ul class="list">
+          <li onclick="openGroup()">
+            <span class="icon-pill"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8 12 3 3 8v8l9 5 9-5Z"/><path d="M3 8l9 5 9-5"/><path d="M12 13v8"/></svg></span>
+            <div style="flex:1"><div class="group-title">Хрещатик 22</div><div class="group-sub">Переїзд квартири</div></div>
+            <span class="badge">очікує</span>
+            <span class="chevron"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"/></svg></span>
+          </li>
+          <li onclick="openGroup()">
+            <span class="icon-pill"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="16" height="18" rx="1.5"/><path d="M9 8h1M14 8h1M9 12h1M14 12h1M9 16h1M14 16h1"/></svg></span>
+            <div style="flex:1"><div class="group-title">Nova Pay, офіс</div><div class="group-sub">3 поверх</div></div>
+            <span class="chevron"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"/></svg></span>
+          </li>
+          <li onclick="openGroup()">
+            <span class="icon-pill"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11.5 12 4l9 7.5"/><path d="M5.5 10v9a1 1 0 0 0 1 1H9a1 1 0 0 0 1-1v-4a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v4a1 1 0 0 0 1 1h2.5a1 1 0 0 0 1-1v-9"/></svg></span>
+            <div style="flex:1"><div class="group-title">Гончара 5</div><div class="group-sub">Квартира</div></div>
+            <span class="chevron"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"/></svg></span>
+          </li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- TAB 2: Профіль -->
+  <div class="screen hidden" id="screen-profile">
+    <div class="hero">
+      <div class="eyebrow">MoveNation Assistant</div>
+      <h1>Профіль</h1>
+      <div class="profile-hero-card">
+        <div class="avatar">ОП</div>
+        <div>
+          <div class="name">Олег Петренко</div>
+          <div class="role">Менеджер</div>
+        </div>
+      </div>
+    </div>
+    <div class="content">
+      <div class="card">
+        <h2><span class="dot"></span>Налаштування</h2>
+        <div class="settings-row">
+          <div><div>Посада</div><div class="label">Менеджер</div></div>
+          <button>Змінити</button>
+        </div>
+        <div class="settings-row">
+          <div><div>Особистий акаунт</div><div class="label">Підключено для створення груп</div></div>
+          <span class="status-pill">Активно</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Screen 3: деталі групи (не таб, відкривається зверху) -->
+  <div class="screen hidden" id="screen-group-detail">
+    <div class="detail-header">
+      <button class="back-btn" onclick="closeGroup()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 6-6 6 6 6"/></svg></button>
+      <div class="title-block">
+        <h1>Хрещатик 22</h1>
+        <div class="sub">Команда групи</div>
+      </div>
+    </div>
+    <div class="content">
+      <div class="card">
+        <h2><span class="dot"></span>Учасники</h2>
+        <div class="member-row">
+          <div class="member-avatar">МК</div>
+          <div style="flex:1"><div class="member-name">Марина Ковальчук</div><div class="member-tag">@marina_k</div></div>
+          <span class="role-badge">клієнт</span>
+        </div>
+        <div class="member-row">
+          <div class="member-avatar">ВЛ</div>
+          <div style="flex:1"><div class="member-name">Віктор Лисенко</div><div class="member-tag">@vlysenko</div></div>
+          <span class="role-badge">вантажник</span>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2><span class="dot"></span>Додати клієнта</h2>
+        <input type="text" placeholder="@username клієнта" />
+        <button class="primary">Додати</button>
+        <div class="status">✓ Клієнта додано</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="tabbar" id="tabbar">
+    <button class="tab-btn active" data-tab="groups" onclick="switchTab('groups')">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg></span>Групи
+    </button>
+    <button class="tab-btn" data-tab="profile" onclick="switchTab('profile')">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="3.2"/><path d="M4.5 20c1.3-3.8 4.4-6 7.5-6s6.2 2.2 7.5 6"/></svg></span>Профіль
+    </button>
+  </div>
+
+</div>
+
+<script>
+  function switchTab(name) {
+    document.getElementById('screen-groups').classList.toggle('hidden', name !== 'groups');
+    document.getElementById('screen-profile').classList.toggle('hidden', name !== 'profile');
+    document.getElementById('screen-group-detail').classList.add('hidden');
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.tab === name);
+    });
+    document.getElementById('tabbar').style.display = 'flex';
+  }
+  function openGroup() {
+    document.getElementById('screen-groups').classList.add('hidden');
+    document.getElementById('screen-profile').classList.add('hidden');
+    document.getElementById('screen-group-detail').classList.remove('hidden');
+    document.getElementById('tabbar').style.display = 'none';
+  }
+  function closeGroup() {
+    document.getElementById('screen-group-detail').classList.add('hidden');
+    switchTab('groups');
+  }
+</script>
+
+</body>
+</html>

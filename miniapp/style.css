@@ -1,0 +1,278 @@
+:root {
+  --accent1: #6d5bff;
+  --accent2: #00c2b8;
+  --bg: #f6f7fb;
+  --surface: #ffffff;
+  --surface-muted: #fafaff;
+  --text: #1c1e29;
+  --muted: #8d90a3;
+  --border: #edeef4;
+  --danger: #ff5c6a;
+  --success: #00988f;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+}
+
+h1, h2, h3, p { margin: 0; }
+
+button {
+  font-family: inherit;
+  cursor: pointer;
+}
+button:disabled { opacity: 0.6; cursor: default; pointer-events: none; }
+
+#app { position: relative; height: 100vh; overflow: hidden; }
+
+/* Top-level onboarding/app screens: exactly one is visible at a time via the
+   native `hidden` attribute (toggled from app.js), matching this project's
+   existing convention instead of a CSS class. */
+.top-screen { position: absolute; inset: 0; overflow-y: auto; }
+
+/* Scrolling stays functional, but Telegram's in-app WebView (and some
+   desktop browsers) render a visible scrollbar track on `overflow-y: auto`
+   elements, which looks out of place in a native-feeling Mini App UI. Hide
+   the scrollbar itself across engines while keeping the scroll behavior. */
+.top-screen::-webkit-scrollbar,
+.sub-screen::-webkit-scrollbar {
+  display: none;
+}
+.top-screen,
+.sub-screen {
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* old Edge/IE */
+}
+
+/* --- shared: gradient hero header + overlapping card content --- */
+.hero {
+  background: linear-gradient(135deg, var(--accent1), var(--accent2));
+  padding: 22px 16px 34px;
+  color: #fff;
+  border-radius: 0 0 24px 24px;
+}
+.hero-top-row { display: flex; align-items: center; gap: 10px; }
+.hero .eyebrow { font-size: 11.5px; opacity: 0.85; letter-spacing: 0.05em; text-transform: uppercase; font-weight: 700; }
+.hero h1 { font-size: 20px; font-weight: 700; margin-top: 4px; }
+.hero p { margin-top: 8px; font-size: 13px; opacity: 0.9; line-height: 1.5; max-width: 340px; }
+
+.content { padding: 0 16px; margin-top: -20px; }
+
+.card {
+  background: var(--surface);
+  border-radius: 18px;
+  padding: 16px;
+  margin-bottom: 14px;
+  box-shadow: 0 8px 24px rgba(30, 20, 90, 0.06);
+}
+.card:last-child { margin-bottom: 0; }
+.card h2 {
+  font-size: 13px; font-weight: 700; margin-bottom: 12px;
+  display: flex; align-items: center; gap: 6px;
+}
+.card h2 .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent1); flex-shrink: 0; }
+
+input {
+  width: 100%; padding: 12px 14px; margin: 0 0 10px;
+  border: 1.5px solid var(--border); border-radius: 12px;
+  font-size: 14px; background: var(--surface-muted); color: var(--text);
+  font-family: inherit;
+}
+input:focus { outline: none; border-color: var(--accent1); }
+input:last-child { margin-bottom: 0; }
+
+button.primary {
+  width: 100%; padding: 13px; color: #fff;
+  background: linear-gradient(135deg, var(--accent1), var(--accent2));
+  border: none; border-radius: 12px; font-size: 14px; font-weight: 700;
+  transition: opacity 0.15s ease;
+}
+button.primary:active { opacity: 0.85; }
+
+/* status / feedback line shown under a card's action (create group, add
+   client, connect flow) — muted by default, green on success, red on error */
+.status-msg { font-size: 12px; color: var(--muted); text-align: center; margin-top: 10px; font-weight: 600; }
+.status-msg.ok { color: var(--success); }
+.status-msg.error { color: var(--danger); }
+
+/* generic empty-state row shown while a list is loading or genuinely empty */
+.list-empty { color: var(--muted); font-size: 13px; text-align: center; padding: 10px 0; }
+
+/* icon square used for both group-row icons and role-selection avatars —
+   same visual language, only the content (svg vs. initials) differs */
+.icon-pill {
+  width: 34px; height: 34px; border-radius: 10px; background: #eee9ff;
+  display: flex; align-items: center; justify-content: center; color: var(--accent1);
+  font-weight: 700; font-size: 12px; flex-shrink: 0;
+}
+.icon-pill svg { width: 17px; height: 17px; }
+
+.chevron { margin-left: auto; color: var(--muted); display: flex; align-items: center; flex-shrink: 0; }
+.chevron svg { width: 16px; height: 16px; }
+
+.badge {
+  font-size: 11px; background: #ffe3e6; color: var(--danger);
+  padding: 4px 9px; border-radius: 20px; font-weight: 700; flex-shrink: 0;
+}
+
+/* --- loading screen --- */
+.loading-wrap {
+  height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 18px; text-align: center; padding: 0 30px;
+}
+.logo-mark {
+  width: 64px; height: 64px; border-radius: 20px;
+  background: linear-gradient(135deg, var(--accent1), var(--accent2));
+  display: flex; align-items: center; justify-content: center;
+  color: #fff; font-weight: 800; font-size: 22px;
+  box-shadow: 0 12px 28px rgba(109, 91, 255, 0.28);
+}
+.spinner {
+  width: 26px; height: 26px; border-radius: 50%;
+  border: 3px solid #eceaff; border-top-color: var(--accent1);
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.loading-text { color: var(--muted); font-size: 13px; font-weight: 600; }
+
+/* --- shared list-row button: used for the role picker AND the groups list.
+   Both are "a row with an icon square, a label, and a chevron" — one
+   component, not two. --- */
+.list-row {
+  width: 100%; display: flex; align-items: center; gap: 10px;
+  padding: 12px; border-radius: 12px; border: none;
+  background: var(--surface-muted); color: var(--text); font-size: 14px; font-weight: 600;
+  text-align: left; font-family: inherit; cursor: pointer;
+}
+.list-row:active { background: #f1f0ff; }
+.list-row .row-label { flex: 1; }
+
+ul.role-list { list-style: none; margin: 0; padding: 0; }
+ul.role-list li { margin-bottom: 8px; }
+ul.role-list li:last-child { margin-bottom: 0; }
+
+/* --- connect step --- */
+.step-dots { display: flex; gap: 6px; margin-top: 14px; }
+/* Same author-CSS-vs-UA-stylesheet issue as `.back-btn[hidden]` above: without
+   this, hiding the role-step's progress dots in "Змінити посаду" mode
+   (settings) would silently do nothing. */
+.step-dots[hidden] { display: none; }
+.step-dot { width: 22px; height: 4px; border-radius: 4px; background: rgba(255,255,255,0.35); }
+.step-dot.active { background: #fff; }
+
+.lock-note {
+  display: flex; gap: 10px; align-items: flex-start;
+  background: #f6f5ff; border-radius: 12px; padding: 12px 14px; margin-bottom: 14px;
+  font-size: 12.5px; color: #5b53a8; line-height: 1.5;
+}
+.lock-note svg { width: 16px; height: 16px; flex-shrink: 0; margin-top: 1px; }
+
+/* --- main app: groups / profile sub-screens + floating tab bar --- */
+#main-app { overflow: hidden; }
+
+/* Sub-screens inside #main-app (groups / profile / group-detail) behave like
+   their own top-level screens: exactly one visible at a time, each scrolls
+   independently, and they leave room at the bottom for the floating tab bar. */
+.sub-screen { position: absolute; inset: 0; overflow-y: auto; padding-bottom: 96px; }
+
+ul.list { list-style: none; margin: 0; padding: 0; }
+ul.list li { margin-bottom: 8px; }
+ul.list li:last-child { margin-bottom: 0; }
+
+.profile-hero-card {
+  display: flex; align-items: center; gap: 12px;
+  background: rgba(255,255,255,0.14); border-radius: 16px; padding: 14px;
+  backdrop-filter: blur(6px); margin-top: 16px;
+}
+.avatar {
+  width: 46px; height: 46px; border-radius: 50%;
+  background: #fff; color: var(--accent1);
+  display: flex; align-items: center; justify-content: center;
+  font-weight: 700; font-size: 16px; flex-shrink: 0;
+}
+.profile-hero-card .name { font-weight: 700; font-size: 15px; }
+.profile-hero-card .role { font-size: 12px; opacity: 0.85; margin-top: 1px; }
+
+.settings-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 13px 2px; border-bottom: 1px solid var(--border);
+  font-size: 14px;
+}
+.settings-row:last-child { border-bottom: none; }
+.settings-row .label { color: var(--muted); font-size: 12px; margin-top: 1px; }
+.settings-row button {
+  width: auto; flex-shrink: 0; background: none; color: var(--accent1); border: none;
+  font-size: 13.5px; font-weight: 700; padding: 4px;
+}
+.settings-row button:active { opacity: 0.6; }
+.status-pill {
+  font-size: 11px; font-weight: 700; padding: 3px 9px; border-radius: 20px;
+  background: #e6faf5; color: var(--success); flex-shrink: 0;
+}
+
+/* --- group detail sub-screen --- */
+.detail-header {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 18px 16px 26px;
+  background: linear-gradient(135deg, var(--accent1), var(--accent2));
+  border-radius: 0 0 24px 24px;
+  color: #fff;
+}
+.back-btn {
+  width: 34px; height: 34px; border-radius: 10px; background: rgba(255,255,255,0.2);
+  display: flex; align-items: center; justify-content: center;
+  color: #fff; border: none; flex-shrink: 0;
+  transition: background 0.15s ease;
+}
+/* `.back-btn` sets its own `display: flex`, which — being author CSS — takes
+   priority over the browser's default `[hidden] { display: none }` rule
+   regardless of specificity or source order. Without this override, setting
+   the `hidden` property on a back button from JS silently does nothing. */
+.back-btn[hidden] { display: none; }
+.back-btn:active { background: rgba(255,255,255,0.32); }
+.back-btn svg { width: 18px; height: 18px; }
+.detail-header .title-block { text-align: right; }
+.detail-header h1 { font-size: 20px; font-weight: 700; color: #fff; }
+.detail-header .sub { font-size: 12px; color: rgba(255,255,255,0.85); margin-top: 3px; }
+
+ul.member-list { list-style: none; margin: 0; padding: 0; }
+.member-row { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px dashed var(--border); }
+.member-row:last-child { border-bottom: none; }
+.member-avatar {
+  width: 32px; height: 32px; border-radius: 10px; background: #eee9ff;
+  display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; color: var(--accent1);
+  flex-shrink: 0;
+}
+.member-name { font-size: 14px; font-weight: 600; }
+.role-badge {
+  display: inline-block; font-size: 11px; font-weight: 700;
+  padding: 4px 9px; border-radius: 20px;
+  background: #e3faf0; color: #00a173; flex-shrink: 0;
+}
+
+/* --- bottom tab bar --- */
+.tabbar {
+  position: absolute; left: 16px; right: 16px; bottom: 14px;
+  background: var(--surface); border-radius: 20px;
+  display: flex; gap: 6px; padding: 7px;
+  box-shadow: 0 14px 34px rgba(30, 20, 90, 0.14);
+  z-index: 10;
+}
+.tabbar[hidden] { display: none; }
+.tab-btn {
+  flex: 1; background: none; border: none; display: flex; flex-direction: column;
+  align-items: center; gap: 3px; padding: 8px 0; border-radius: 14px;
+  color: var(--muted); font-size: 11px; font-weight: 600;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.tab-btn .icon { display: flex; }
+.tab-btn .icon svg { width: 20px; height: 20px; }
+.tab-btn.active { color: var(--accent1); background: #f4f3ff; }
+.tab-btn:active { opacity: 0.6; }

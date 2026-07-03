@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Варіант C — Bold Dark</title>
+<style>
+  :root {
+    --accent: #ff8a3d;
+    --bg: #0f1115;
+    --surface: #181b21;
+    --surface2: #1f232b;
+    --text: #f4f4f6;
+    --muted: #8b8f9c;
+    --border: #262b34;
+    --danger: #ff5c5c;
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    margin: 0;
+    padding: 0 0 28px;
+  }
+  .topbar { padding: 20px 16px 8px; }
+  .topbar .eyebrow { font-size: 11.5px; color: var(--accent); letter-spacing: 0.08em; text-transform: uppercase; font-weight: 700; }
+  .topbar h1 { margin: 6px 0 0; font-size: 21px; font-weight: 700; }
+
+  .profile-card {
+    margin: 16px; padding: 14px 16px; border-radius: 16px;
+    background: var(--surface); display: flex; align-items: center; gap: 12px;
+    border: 1px solid var(--border);
+  }
+  .avatar {
+    width: 42px; height: 42px; border-radius: 12px;
+    background: var(--accent); color: #14100b;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 800; font-size: 15px; flex-shrink: 0;
+  }
+  .profile-name { font-weight: 700; font-size: 14px; }
+  .profile-role { font-size: 12px; color: var(--muted); margin-top: 1px; }
+  .link-btn {
+    margin-left: auto; background: var(--surface2); color: var(--accent);
+    border: 1px solid var(--border); border-radius: 20px; font-size: 12px; padding: 7px 12px; width: auto; font-weight: 700;
+  }
+
+  .section { padding: 0 16px; }
+  .card {
+    background: var(--surface);
+    border-radius: 16px;
+    padding: 16px;
+    margin-bottom: 14px;
+    border: 1px solid var(--border);
+  }
+  .card h2 {
+    font-size: 12.5px; font-weight: 800; margin: 0 0 12px;
+    color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em;
+  }
+
+  input {
+    width: 100%; padding: 12px 14px; margin: 0 0 10px;
+    border: 1px solid var(--border); border-radius: 12px;
+    font-size: 14px; background: var(--surface2); color: var(--text);
+  }
+  input::placeholder { color: var(--muted); }
+  input:focus { outline: none; border-color: var(--accent); }
+
+  button.primary {
+    width: 100%; padding: 13px; color: #14100b;
+    background: var(--accent);
+    border: none; border-radius: 12px; font-size: 14.5px; font-weight: 800;
+    letter-spacing: 0.01em;
+  }
+
+  ul.list { list-style: none; margin: 0; padding: 0; }
+  ul.list li {
+    display: flex; align-items: center; gap: 10px;
+    padding: 13px 0; border-bottom: 1px solid var(--border);
+  }
+  ul.list li:last-child { border-bottom: none; }
+  .group-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); flex-shrink: 0; }
+  .group-dot.alert { background: var(--danger); box-shadow: 0 0 0 4px rgba(255,92,92,0.15); }
+  .group-title { font-size: 14.5px; font-weight: 600; flex: 1; }
+  .badge {
+    font-size: 10.5px; background: rgba(255,92,92,0.15); color: var(--danger);
+    padding: 4px 9px; border-radius: 20px; font-weight: 800;
+  }
+  .chevron { color: var(--muted); }
+
+  .member-row { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--border); }
+  .member-row:last-child { border-bottom: none; }
+  .member-avatar {
+    width: 32px; height: 32px; border-radius: 10px; background: var(--surface2);
+    display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 800; color: var(--accent);
+    border: 1px solid var(--border);
+  }
+  .member-name { font-size: 13.5px; font-weight: 600; }
+  .member-tag { font-size: 11.5px; color: var(--muted); }
+
+  .status { font-size: 12.5px; color: var(--accent); margin-top: 10px; text-align: center; font-weight: 700; }
+</style>
+</head>
+<body>
+
+  <div class="topbar">
+    <div class="eyebrow">MoveNation Assistant</div>
+    <h1>Панель керування</h1>
+  </div>
+
+  <div class="profile-card">
+    <div class="avatar">ОП</div>
+    <div>
+      <div class="profile-name">Олег Петренко</div>
+      <div class="profile-role">Менеджер</div>
+    </div>
+    <button class="link-btn">Змінити</button>
+  </div>
+
+  <div class="section">
+    <div class="card">
+      <h2>Створити групу</h2>
+      <input type="text" placeholder="Назва групи" />
+      <button class="primary">Створити</button>
+    </div>
+
+    <div class="card">
+      <h2>Мої групи</h2>
+      <ul class="list">
+        <li><span class="group-dot alert"></span><span class="group-title">Переїзд — вул. Хрещатик 22</span><span class="badge">очікує</span><span class="chevron">›</span></li>
+        <li><span class="group-dot"></span><span class="group-title">Офіс Nova Pay — 3 поверх</span><span class="chevron">›</span></li>
+        <li><span class="group-dot"></span><span class="group-title">Квартира, вул. Гончара 5</span><span class="chevron">›</span></li>
+      </ul>
+    </div>
+
+    <div class="card">
+      <h2>Команда групи — Хрещатик 22</h2>
+      <div class="member-row">
+        <div class="member-avatar">МК</div>
+        <div><div class="member-name">Марина Ковальчук</div><div class="member-tag">@marina_k · клієнт</div></div>
+      </div>
+      <div class="member-row">
+        <div class="member-avatar">ВЛ</div>
+        <div><div class="member-name">Віктор Лисенко</div><div class="member-tag">@vlysenko · вантажник</div></div>
+      </div>
+
+      <div style="margin-top:14px;">
+        <input type="text" placeholder="@username клієнта" />
+        <button class="primary">Додати клієнта</button>
+      </div>
+      <div class="status">Клієнта додано.</div>
+    </div>
+  </div>
+
+</body>
+</html>

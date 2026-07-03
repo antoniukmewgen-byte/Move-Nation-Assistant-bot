@@ -1,0 +1,47 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+
+      - name: Ruff lint
+        run: ruff check .
+
+      - name: Ruff format check
+        run: ruff format --check .
+
+      - name: Mypy
+        run: mypy
+
+      - name: Compile check
+        run: python -m compileall -q app
+
+      - name: Run tests
+        run: pytest --cov=app --cov-report=term-missing
+
+      - name: Verify Alembic migrations apply cleanly
+        env:
+          BOT_TOKEN: "123456:ci-placeholder-token"
+          API_ID: "123456"
+          API_HASH: "ci-placeholder-hash"
+          SESSION_ENCRYPTION_KEY: "TIiL2K4xN1RsB0j8v_2t3EbFV6oW2G1cNwzM8UeVzyc="
+          DATABASE_URL: "sqlite+aiosqlite:///./ci-test.db"
+        run: |
+          alembic upgrade head
+          alembic downgrade base

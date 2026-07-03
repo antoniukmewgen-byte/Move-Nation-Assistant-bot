@@ -1,0 +1,120 @@
+from datetime import datetime
+
+from aiogram import F, Router
+from aiogram.exceptions import TelegramBadRequest, TelegramMigrateToChat
+from aiogram.filters import Command
+from aiogram.filters.chat_member_updated import IS_MEMBER, ChatMemberUpdatedFilter
+from aiogram.types import ChatMemberUpdated, Message
+
+from app.bot.guards import require_text, require_user
+from app.db import crud
+from app.db.models import GroupStatus
+from app.db.session import async_session
+
+router = Router()
+
+
+@router.my_chat_member(ChatMemberUpdatedFilter(member_status_changed=IS_MEMBER))
+async def on_bot_added_to_group(event: ChatMemberUpdated) -> None:
+    if event.chat.type not in ("group", "supergroup"):
+        return
+
+    async with async_session() as session:
+        group = await crud.get_group(session, event.chat.id)
+        if group is None:
+            bot = event.bot
+            if bot is None:
+                return
+            try:
+                await bot.send_message(
+                    event.chat.id,
+                    "Я підключився до цієї групи. Щоб я міг стежити за повідомленнями клієнтів, "
+                    "признач мене адміністратором і познач учасників тегами через /register та /tag.",
+                )
+            except TelegramMigrateToChat:
+                # This chat_id belonged to a basic group that got migrated to a
+                # supergroup between Telegram queuing this "bot was added"
+                # update and us processing it — happens when our own
+                # group-creation flow invites the bot at chat-creation time
+                # and then immediately migrates it (see
+                # app/userbot/actions.py::create_group_with_team). The real
+                # group record (under the post-migration chat_id) is already
+                # created by that flow, so there is nothing to register for
+                # this stale, now-defunct chat_id.
+                return
+            except TelegramBadRequest as exc:
+                # Same root cause as the TelegramMigrateToChat case above —
+                # a stale, now-defunct chat_id after migration — but
+                # depending on timing Telegram's Bot API reports it as a
+                # plain "PEER_ID_INVALID" bad request instead of the
+                # structured migrate-to-chat error. Any other bad-request
+                # reason is a real problem and should still surface.
+                if "PEER_ID_INVALID" not in exc.message:
+                    raise
+                return
+            await crud.create_group_record(
+                session, event.chat.id, event.chat.title or "Без назви", created_by_userbot=False
+            )
+            await session.commit()
+
+
+@router.message(Command("register"), F.chat.type.in_({"group", "supergroup"}))
+async def cmd_register(message: Message) -> None:
+    async with async_session() as session:
+        group = await crud.get_group(session, message.chat.id)
+        if group is None:
+            await crud.create_group_record(
+                session, message.chat.id, message.chat.title or "Без назви", created_by_userbot=False
+            )
+        else:
+            group.status = GroupStatus.ACTIVE
+        await session.commit()
+
+    await message.answer(
+        "Групу зареєстровано. Познач учасників тегами командою /tag "
+        "у відповідь на повідомлення учасника, наприклад: /tag Менеджер"
+    )
+
+
+@router.message(Command("tag"), F.chat.type.in_({"group", "supergroup"}))
+async def cmd_tag(message: Message) -> None:
+    if not message.reply_to_message:
+        await message.answer(
+            "Використовуй цю команду у відповідь на повідомлення учасника, якого хочеш позначити."
+        )
+        return
+
+    text = require_text(message)
+    parts = text.split(maxsplit=1)
+    if len(parts) < 2:
+        await message.answer("Вкажи тег, наприклад: /tag Менеджер")
+        return
+    tag_value = parts[1].strip()
+
+    target = require_user(message.reply_to_message)
+    async with async_session() as session:
+        await crud.get_or_create_user(session, target.id, target.username, target.full_name)
+        await crud.add_member_tag(session, message.chat.id, target.id, tag_value)
+        await session.commit()
+
+    await message.answer(f"{target.full_name} позначено тегом «{tag_value}».")
+
+
+@router.message(F.chat.type.in_({"group", "supergroup"}), F.text, ~F.text.startswith("/"))
+async def track_group_message(message: Message) -> None:
+    async with async_session() as session:
+        group = await crud.get_group(session, message.chat.id)
+        if group is None:
+            return
+
+        sender = require_user(message)
+        sender_is_client = await crud.is_client(session, message.chat.id, sender.id)
+
+        if sender_is_client:
+            await crud.mark_awaiting_response(
+                session, message.chat.id, sender.id, message.date or datetime.utcnow()
+            )
+        else:
+            await crud.clear_awaiting_response(session, message.chat.id)
+
+        await session.commit()
