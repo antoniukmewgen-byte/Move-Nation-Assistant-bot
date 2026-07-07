@@ -9,6 +9,7 @@ from app.db import crud
 from app.db.session import async_session
 from app.services.crypto import decrypt_session
 from app.userbot.actions import create_group_with_team
+from app.userbot.actions import delete_group as delete_group_in_telegram
 
 logger = logging.getLogger(__name__)
 
@@ -53,3 +54,38 @@ async def create_group(
                 await crud.add_member_tag(session, chat_id, user_id, role.value)
         await session.commit()
         return GroupOut(id=group.id, title=group.title, status=group.status.value, awaiting_response=False)
+
+
+@router.delete("/{group_id}")
+async def remove_group(group_id: int, requested_by: int = Depends(get_verified_user_id)) -> dict:
+    async with async_session() as session:
+        if not await crud.user_is_group_member(session, group_id, requested_by):
+            raise HTTPException(status_code=403, detail="Немає доступу до цієї групи")
+        encrypted_session = await crud.get_user_session(session, requested_by)
+
+    # Видалення самого чату в Telegram — це "best effort": якщо в акаунта
+    # користувача, що ініціює видалення, немає прав творця/адміна (або він
+    # ще не підключив Telegram-акаунт через /connect), просто пропускаємо
+    # цей крок і однаково прибираємо групу з нашої БД нижче — інакше
+    # "завислі" чи вже недоступні групи неможливо було б прибрати з застосунку.
+    deleted_in_telegram = False
+    if encrypted_session is not None:
+        try:
+            deleted_in_telegram = await delete_group_in_telegram(decrypt_session(encrypted_session), group_id)
+        except FloodWaitError as exc:
+            raise HTTPException(
+                status_code=429, detail=f"Забагато запитів до Telegram, спробуй через {exc.seconds} с"
+            ) from exc
+        except Exception:
+            logger.exception(
+                "Не вдалося видалити групу %s в Telegram від імені user_id=%s", group_id, requested_by
+            )
+
+    async with async_session() as session:
+        removed = await crud.delete_group(session, group_id)
+        await session.commit()
+
+    if not removed:
+        raise HTTPException(status_code=404, detail="Групу не знайдено")
+
+    return {"ok": True, "deleted_in_telegram": deleted_in_telegram}

@@ -3,7 +3,7 @@ from datetime import datetime
 from aiogram import F, Router
 from aiogram.exceptions import TelegramBadRequest, TelegramMigrateToChat
 from aiogram.filters import Command
-from aiogram.filters.chat_member_updated import IS_MEMBER, ChatMemberUpdatedFilter
+from aiogram.filters.chat_member_updated import JOIN_TRANSITION, LEAVE_TRANSITION, ChatMemberUpdatedFilter
 from aiogram.types import ChatMemberUpdated, Message
 
 from app.bot.guards import require_text, require_user
@@ -14,8 +14,16 @@ from app.db.session import async_session
 router = Router()
 
 
-@router.my_chat_member(ChatMemberUpdatedFilter(member_status_changed=IS_MEMBER))
+@router.my_chat_member(ChatMemberUpdatedFilter(member_status_changed=JOIN_TRANSITION))
 async def on_bot_added_to_group(event: ChatMemberUpdated) -> None:
+    # JOIN_TRANSITION (not-a-member -> member) fires only when the bot
+    # actually joins the chat. aiogram's IS_MEMBER, by contrast, matches
+    # any update where the *new* status is member-like — including the
+    # member -> administrator promotion our own userbot flow triggers
+    # right after creating a group (see
+    # app/userbot/actions.py::_promote_assistant_bot). Filtering on
+    # IS_MEMBER made that promotion re-trigger this handler and send the
+    # welcome message a second time.
     if event.chat.type not in ("group", "supergroup"):
         return
 
@@ -56,6 +64,26 @@ async def on_bot_added_to_group(event: ChatMemberUpdated) -> None:
                 session, event.chat.id, event.chat.title or "Без назви", created_by_userbot=False
             )
             await session.commit()
+
+
+@router.my_chat_member(ChatMemberUpdatedFilter(member_status_changed=LEAVE_TRANSITION))
+async def on_bot_removed_from_group(event: ChatMemberUpdated) -> None:
+    """Прибирає групу з нашої БД, коли бот перестає бути її учасником.
+
+    LEAVE_TRANSITION (member-like -> left/kicked) покриває і явний кік
+    бота з групи, і повне видалення самої групи в Telegram — в обох
+    випадках Telegram надсилає боту цю саму транзицію для chat_id групи.
+    Без бота в чаті ми однаково більше не можемо стежити за повідомленнями
+    чи нагадуваннями, тож застарілий запис сенсу тримати немає (а якщо
+    Telegram колись перевикористає цей chat_id для нової групи — краще,
+    щоб старого запису вже не було).
+    """
+    if event.chat.type not in ("group", "supergroup"):
+        return
+
+    async with async_session() as session:
+        await crud.delete_group(session, event.chat.id)
+        await session.commit()
 
 
 @router.message(Command("register"), F.chat.type.in_({"group", "supergroup"}))

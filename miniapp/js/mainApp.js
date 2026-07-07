@@ -2,6 +2,7 @@ import { apiFetch, safeJson } from "./api.js";
 import { showStep } from "./navigation.js";
 import { CHEVRON_SVG, GROUP_ICON_SVG, escapeHtml, nameInitials } from "./render.js";
 import { showRoleStep } from "./onboarding.js";
+import { tg } from "./telegram.js";
 
 // --- Main app: groups (tab) / profile (tab) / group detail (drill-down) ---
 
@@ -80,6 +81,9 @@ async function openGroupDetail(groupId, title) {
   document.getElementById("group-detail-title").textContent = title;
   document.getElementById("add-client-status").textContent = "";
   document.getElementById("client-identifier").value = "";
+  const deleteStatus = document.getElementById("delete-group-status");
+  deleteStatus.textContent = "";
+  deleteStatus.classList.remove("ok", "error");
 
   document.getElementById("screen-groups").hidden = true;
   document.getElementById("screen-profile").hidden = true;
@@ -182,3 +186,41 @@ addClientBtn.addEventListener("click", async () => {
     status.classList.add("error");
   }
 });
+
+const deleteGroupBtn = document.getElementById("delete-group-btn");
+deleteGroupBtn.addEventListener("click", () => {
+  if (!selectedGroupId) return;
+
+  const confirmMessage = "Видалити цю групу? Цю дію не можна скасувати.";
+  // Telegram's own confirm dialog looks native inside the Mini App; fall
+  // back to the browser's confirm() for older clients that predate
+  // showConfirm (same defensive-guard pattern as telegram.js's bootstrap).
+  if (tg?.showConfirm) {
+    tg.showConfirm(confirmMessage, (confirmed) => {
+      if (confirmed) deleteSelectedGroup();
+    });
+  } else if (window.confirm(confirmMessage)) {
+    deleteSelectedGroup();
+  }
+});
+
+async function deleteSelectedGroup() {
+  const status = document.getElementById("delete-group-status");
+  status.classList.remove("ok", "error");
+  deleteGroupBtn.disabled = true;
+  status.textContent = "Видаляю…";
+
+  const res = await apiFetch(`/groups/${selectedGroupId}`, { method: "DELETE" });
+  const data = await safeJson(res);
+  deleteGroupBtn.disabled = false;
+
+  if (res.ok) {
+    status.textContent = "Групу видалено.";
+    status.classList.add("ok");
+    switchTab("groups");
+    await fetchGroups();
+  } else {
+    status.textContent = `Помилка: ${data.detail || "спробуй ще раз."}`;
+    status.classList.add("error");
+  }
+}

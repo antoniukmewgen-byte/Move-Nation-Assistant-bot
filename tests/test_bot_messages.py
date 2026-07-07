@@ -79,6 +79,45 @@ async def test_on_bot_added_to_group_is_a_noop_for_already_registered_group(_pat
     assert bot.sent == []
 
 
+# --- on_bot_removed_from_group -----------------------------------------------
+
+
+async def test_on_bot_removed_from_group_deletes_the_record(_patch_db) -> None:
+    async with _patch_db() as session:
+        group = await crud.create_group_record(session, 100, "Team Chat", created_by_userbot=False)
+        await crud.add_member_tag(session, group.id, 1, "Менеджер")
+        await session.commit()
+
+    event = SimpleNamespace(chat=FakeChat(id=100, type="supergroup"))
+
+    await messages_handlers.on_bot_removed_from_group(event)
+
+    async with _patch_db() as session:
+        assert await crud.get_group(session, 100) is None
+
+
+async def test_on_bot_removed_from_group_ignores_private_chats(_patch_db) -> None:
+    async with _patch_db() as session:
+        await crud.create_group_record(session, 1, "Not a group", created_by_userbot=False)
+        await session.commit()
+
+    event = SimpleNamespace(chat=FakeChat(id=1, type="private"))
+
+    await messages_handlers.on_bot_removed_from_group(event)
+
+    async with _patch_db() as session:
+        assert await crud.get_group(session, 1) is not None
+
+
+async def test_on_bot_removed_from_group_is_a_noop_for_unregistered_group(_patch_db) -> None:
+    event = SimpleNamespace(chat=FakeChat(id=999, type="group"))
+
+    await messages_handlers.on_bot_removed_from_group(event)
+
+    async with _patch_db() as session:
+        assert await crud.get_group(session, 999) is None
+
+
 # --- /register ----------------------------------------------------------------
 
 

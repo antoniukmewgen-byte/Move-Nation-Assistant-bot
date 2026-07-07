@@ -83,6 +83,21 @@ async def get_group(session: AsyncSession, group_id: int) -> Group | None:
     return await session.get(Group, group_id)
 
 
+async def delete_group(session: AsyncSession, group_id: int) -> bool:
+    """Прибирає групу з БД разом з усіма її учасниками (тегами).
+
+    `Group.members` має `cascade="all, delete-orphan"` на рівні ORM (див.
+    app/db/models.py), тож видалення через `session.delete()` саме заб'є
+    пов'язані рядки `group_members` — окремо чистити їх не треба.
+    """
+    group = await session.get(Group, group_id)
+    if group is None:
+        return False
+    await session.delete(group)
+    await session.flush()
+    return True
+
+
 async def get_group_members(session: AsyncSession, group_id: int) -> list[GroupMember]:
     result = await session.execute(
         select(GroupMember).where(GroupMember.group_id == group_id).options(selectinload(GroupMember.user))

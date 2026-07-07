@@ -122,3 +122,128 @@ async def test_create_group_translates_unexpected_error_to_502(
 
     assert exc_info.value.status_code == 502
     assert "Не вдалося створити групу" in caplog.text
+
+
+async def test_remove_group_requires_membership(_patch_db) -> None:
+    async with _patch_db() as session:
+        await crud.get_or_create_user(session, 1, "alice", "Alice A.")
+        await crud.create_group_record(session, 100, "Group One", created_by_userbot=True)
+        await session.commit()
+
+    with pytest.raises(HTTPException) as exc_info:
+        await groups_routes.remove_group(100, requested_by=1)
+
+    assert exc_info.value.status_code == 403
+
+
+async def test_remove_group_deletes_record_and_reports_telegram_result(
+    _patch_db, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async with _patch_db() as session:
+        await crud.get_or_create_user(session, 1, "alice", "Alice A.")
+        await crud.set_user_session(session, 1, "encrypted-session-string")
+        group = await crud.create_group_record(session, 100, "Group One", created_by_userbot=True)
+        await crud.add_member_tag(session, group.id, 1, "Менеджер")
+        await session.commit()
+
+    monkeypatch.setattr(groups_routes, "decrypt_session", lambda s: "decrypted-" + s)
+
+    async def fake_delete_group_in_telegram(session_string, group_id):
+        assert session_string == "decrypted-encrypted-session-string"
+        assert group_id == 100
+        return True
+
+    monkeypatch.setattr(groups_routes, "delete_group_in_telegram", fake_delete_group_in_telegram)
+
+    result = await groups_routes.remove_group(100, requested_by=1)
+
+    assert result == {"ok": True, "deleted_in_telegram": True}
+    async with _patch_db() as session:
+        assert await crud.get_group(session, 100) is None
+
+
+async def test_remove_group_still_removes_record_when_not_connected(_patch_db) -> None:
+    async with _patch_db() as session:
+        await crud.get_or_create_user(session, 1, "alice", "Alice A.")
+        group = await crud.create_group_record(session, 100, "Group One", created_by_userbot=True)
+        await crud.add_member_tag(session, group.id, 1, "Менеджер")
+        await session.commit()
+
+    result = await groups_routes.remove_group(100, requested_by=1)
+
+    assert result == {"ok": True, "deleted_in_telegram": False}
+    async with _patch_db() as session:
+        assert await crud.get_group(session, 100) is None
+
+
+async def test_remove_group_still_removes_record_when_telegram_action_fails(
+    _patch_db, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    async with _patch_db() as session:
+        await crud.get_or_create_user(session, 1, "alice", "Alice A.")
+        await crud.set_user_session(session, 1, "encrypted-session-string")
+        group = await crud.create_group_record(session, 100, "Group One", created_by_userbot=True)
+        await crud.add_member_tag(session, group.id, 1, "Менеджер")
+        await session.commit()
+
+    monkeypatch.setattr(groups_routes, "decrypt_session", lambda s: s)
+
+    async def fake_delete_group_in_telegram(*_args):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(groups_routes, "delete_group_in_telegram", fake_delete_group_in_telegram)
+
+    with caplog.at_level("ERROR"):
+        result = await groups_routes.remove_group(100, requested_by=1)
+
+    assert result == {"ok": True, "deleted_in_telegram": False}
+    assert "Не вдалося видалити групу" in caplog.text
+    async with _patch_db() as session:
+        assert await crud.get_group(session, 100) is None
+
+
+async def test_remove_group_translates_flood_wait_to_429(_patch_db, monkeypatch: pytest.MonkeyPatch) -> None:
+    async with _patch_db() as session:
+        await crud.get_or_create_user(session, 1, "alice", "Alice A.")
+        await crud.set_user_session(session, 1, "encrypted-session-string")
+        group = await crud.create_group_record(session, 100, "Group One", created_by_userbot=True)
+        await crud.add_member_tag(session, group.id, 1, "Менеджер")
+        await session.commit()
+
+    monkeypatch.setattr(groups_routes, "decrypt_session", lambda s: s)
+
+    async def fake_delete_group_in_telegram(*_args):
+        raise FloodWaitError(request=None, capture=30)
+
+    monkeypatch.setattr(groups_routes, "delete_group_in_telegram", fake_delete_group_in_telegram)
+
+    with pytest.raises(HTTPException) as exc_info:
+        await groups_routes.remove_group(100, requested_by=1)
+
+    assert exc_info.value.status_code == 429
+
+
+async def test_remove_group_returns_404_when_record_already_gone(
+    _patch_db, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async with _patch_db() as session:
+        await crud.get_or_create_user(session, 1, "alice", "Alice A.")
+        await session.commit()
+
+    # Simulates the record disappearing between the membership check and
+    # the actual delete (e.g. a concurrent removal by another request) —
+    # the membership check itself is patched to succeed so this exercises
+    # the route's own "not found" branch rather than the 403 one.
+    async def fake_user_is_group_member(*_args):
+        return True
+
+    async def fake_delete_group(*_args):
+        return False
+
+    monkeypatch.setattr(crud, "user_is_group_member", fake_user_is_group_member)
+    monkeypatch.setattr(crud, "delete_group", fake_delete_group)
+
+    with pytest.raises(HTTPException) as exc_info:
+        await groups_routes.remove_group(999, requested_by=1)
+
+    assert exc_info.value.status_code == 404

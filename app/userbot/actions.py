@@ -12,9 +12,21 @@ from __future__ import annotations
 import logging
 
 from telethon import TelegramClient
-from telethon.errors import UsernameInvalidError, UserNotMutualContactError, UserPrivacyRestrictedError
+from telethon.errors import (
+    ChannelPrivateError,
+    ChatAdminRequiredError,
+    UsernameInvalidError,
+    UserNotMutualContactError,
+    UserNotParticipantError,
+    UserPrivacyRestrictedError,
+)
 from telethon.sessions import StringSession
-from telethon.tl.functions.channels import EditAdminRequest, EditPhotoRequest, InviteToChannelRequest
+from telethon.tl.functions.channels import (
+    DeleteChannelRequest,
+    EditAdminRequest,
+    EditPhotoRequest,
+    InviteToChannelRequest,
+)
 from telethon.tl.functions.messages import CreateChatRequest, ExportChatInviteRequest, MigrateChatRequest
 from telethon.tl.types import ChatAdminRights, InputChatUploadedPhoto
 from telethon.utils import get_peer_id
@@ -118,5 +130,37 @@ async def add_client_to_group(
         except (UserPrivacyRestrictedError, UserNotMutualContactError):
             link = await client(ExportChatInviteRequest(peer=channel))
             return entity.id, link.link
+    finally:
+        await client.disconnect()
+
+
+async def delete_group(actor_session: str, group_id: int) -> bool:
+    """Видаляє супергрупу в Telegram від імені співробітника, який ініціював дію.
+
+    Telegram дозволяє повне видалення каналу/супергрупи лише творцю (або
+    адміну з правом на це) — а в нашій БД немає інформації про те, хто саме
+    є творцем конкретної групи. Тож якщо в акаунта, чиєю сесією діємо, немає
+    достатніх прав, просто повертаємо False замість падіння з винятком:
+    видалення запису з нашої БД (див. app/db/crud.py::delete_group) не
+    повинно залежати від того, чи вдалося видалити сам чат у Telegram —
+    інакше застарілі/недоступні групи неможливо було б прибрати з застосунку.
+    """
+    client = _client_for(actor_session)
+    await client.connect()
+
+    try:
+        try:
+            channel = await client.get_entity(group_id)
+        except (ValueError, ChannelPrivateError):
+            # Чат уже недоступний цьому акаунту (наприклад, його вже
+            # прибрали чи акаунт видалили з групи іншим шляхом) — нема що
+            # видаляти на боці Telegram, але прибрати з БД все одно треба.
+            return False
+
+        try:
+            await client(DeleteChannelRequest(channel=channel))
+            return True
+        except (ChatAdminRequiredError, UserNotParticipantError):
+            return False
     finally:
         await client.disconnect()
