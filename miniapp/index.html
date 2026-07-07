@@ -24,7 +24,7 @@
       <div class="hero">
         <div class="hero-top-row">
           <button class="back-btn" id="role-step-back-btn" aria-label="Назад до профілю" hidden>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 6-6 6 6 6"/></svg>
+            <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 6-6 6 6 6"/></svg>
           </button>
           <div class="eyebrow" id="role-step-eyebrow">Крок 1 з 3</div>
         </div>
@@ -63,25 +63,25 @@
       </div>
       <div class="content">
         <div class="lock-note">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="10" width="16" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
+          <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="10" width="16" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
           Сесія зберігається у зашифрованому вигляді і використовується лише для дій, які ти сам ініціюєш через бота.
         </div>
 
         <div class="card" id="connect-phone-form">
           <h2><span class="dot"></span>Номер телефону</h2>
-          <input id="phone-input" type="tel" placeholder="+380XXXXXXXXX" />
+          <input id="phone-input" type="tel" placeholder="+380XXXXXXXXX" aria-label="Номер телефону" />
           <button class="primary" id="phone-submit-btn">Надіслати код</button>
         </div>
 
         <div class="card" id="connect-code-form" hidden>
           <h2><span class="dot"></span>Код з Telegram</h2>
-          <input id="code-input" type="text" placeholder="Код підтвердження" />
+          <input id="code-input" type="text" placeholder="Код підтвердження" aria-label="Код підтвердження" />
           <button class="primary" id="code-submit-btn">Підтвердити</button>
         </div>
 
         <div class="card" id="connect-password-form" hidden>
           <h2><span class="dot"></span>Пароль (2FA)</h2>
-          <input id="password-input" type="password" placeholder="Пароль двофакторної автентифікації" />
+          <input id="password-input" type="password" placeholder="Пароль двофакторної автентифікації" aria-label="Пароль двофакторної автентифікації" />
           <button class="primary" id="password-submit-btn">Увійти</button>
         </div>
 
@@ -100,16 +100,14 @@
         <div class="content">
           <div class="card">
             <h2><span class="dot"></span>Створити групу</h2>
-            <input id="group-title" type="text" placeholder="Назва групи" />
+            <input id="group-title" type="text" placeholder="Назва групи" aria-label="Назва групи" />
             <button class="primary" id="create-group-btn">Створити</button>
             <p class="status-msg" id="create-status"></p>
           </div>
 
           <div class="card">
             <h2><span class="dot"></span>Активні групи</h2>
-            <ul class="list" id="groups">
-              <li class="list-empty">Завантаження…</li>
-            </ul>
+            <ul class="list" id="groups"></ul>
           </div>
         </div>
       </div>
@@ -150,7 +148,7 @@
       <div class="sub-screen" id="screen-group-detail" hidden>
         <div class="detail-header">
           <button class="back-btn" id="back-to-groups-btn" aria-label="Назад до груп">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 6-6 6 6 6"/></svg>
+            <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 6-6 6 6 6"/></svg>
           </button>
           <div class="title-block">
             <h1 id="group-detail-title"></h1>
@@ -166,7 +164,7 @@
 
           <div class="card">
             <h2><span class="dot"></span>Додати клієнта</h2>
-            <input id="client-identifier" type="text" placeholder="@username клієнта" />
+            <input id="client-identifier" type="text" placeholder="@username клієнта" aria-label="Юзернейм клієнта" />
             <button class="primary" id="add-client-btn">Додати</button>
             <p class="status-msg" id="add-client-status"></p>
           </div>
@@ -181,11 +179,11 @@
 
       <div class="tabbar" id="tabbar">
         <button class="tab-btn active" data-tab="groups">
-          <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg></span>
+          <span class="icon"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg></span>
           Групи
         </button>
         <button class="tab-btn" data-tab="profile">
-          <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="3.2"/><path d="M4.5 20c1.3-3.8 4.4-6 7.5-6s6.2 2.2 7.5 6"/></svg></span>
+          <span class="icon"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="3.2"/><path d="M4.5 20c1.3-3.8 4.4-6 7.5-6s6.2 2.2 7.5 6"/></svg></span>
           Профіль
         </button>
       </div>

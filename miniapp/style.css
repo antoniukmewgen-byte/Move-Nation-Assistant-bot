@@ -9,6 +9,7 @@
   --border: #edeef4;
   --danger: #ff5c6a;
   --success: #00988f;
+  --gradient-brand: linear-gradient(135deg, var(--accent1), var(--accent2));
 }
 
 * { box-sizing: border-box; }
@@ -29,6 +30,10 @@ button {
   cursor: pointer;
 }
 button:disabled { opacity: 0.6; cursor: default; pointer-events: none; }
+button:focus-visible {
+  outline: 2px solid var(--accent1);
+  outline-offset: 2px;
+}
 
 #app { position: relative; height: 100vh; overflow: hidden; }
 
@@ -51,9 +56,26 @@ button:disabled { opacity: 0.6; cursor: default; pointer-events: none; }
   -ms-overflow-style: none; /* old Edge/IE */
 }
 
+/* Screen switching is driven by toggling the `hidden` attribute (see
+   navigation.js::showStep / mainApp.js::switchTab), which the browser turns
+   into an instant `display: none` <-> `block` flip. Attaching this animation
+   directly to the always-present class means it replays automatically every
+   time a screen goes from `display: none` back to visible — no JS timing
+   needed. */
+@keyframes screen-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.top-screen, .sub-screen {
+  animation: screen-fade-in 0.15s linear both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .top-screen, .sub-screen { animation: none; }
+}
+
 /* --- shared: gradient hero header + overlapping card content --- */
 .hero {
-  background: linear-gradient(135deg, var(--accent1), var(--accent2));
+  background: var(--gradient-brand);
   padding: 22px 16px 34px;
   color: #fff;
   border-radius: 0 0 24px 24px;
@@ -88,23 +110,21 @@ input {
 input:focus { outline: none; border-color: var(--accent1); }
 input:last-child { margin-bottom: 0; }
 
-button.primary {
-  width: 100%; padding: 13px; color: #fff;
-  background: linear-gradient(135deg, var(--accent1), var(--accent2));
-  border: none; border-radius: 12px; font-size: 14px; font-weight: 700;
-  transition: opacity 0.15s ease;
+button.primary, button.danger {
+  width: 100%; padding: 13px; border-radius: 12px;
+  font-size: 14px; font-weight: 700; transition: opacity 0.15s ease, background 0.15s ease;
 }
-button.primary:active { opacity: 0.85; }
-
+button.primary {
+  color: #fff; background: var(--gradient-brand); border: none;
+}
 /* destructive action (delete group) — outlined red instead of the filled
    gradient `.primary` button, so it doesn't visually compete with the main
    call-to-action on the same screen */
 button.danger {
-  width: 100%; padding: 13px; color: var(--danger);
-  background: transparent; border: 1.5px solid var(--danger); border-radius: 12px;
-  font-size: 14px; font-weight: 700; transition: opacity 0.15s ease, background 0.15s ease;
+  color: var(--danger); background: transparent; border: 1.5px solid var(--danger);
 }
-button.danger:active { opacity: 0.85; background: rgba(255, 82, 82, 0.08); }
+button.primary:active, button.danger:active { opacity: 0.85; }
+button.danger:active { background: rgba(255, 82, 82, 0.08); }
 
 /* status / feedback line shown under a card's action (create group, add
    client, connect flow) — muted by default, green on success, red on error */
@@ -114,6 +134,28 @@ button.danger:active { opacity: 0.85; background: rgba(255, 82, 82, 0.08); }
 
 /* generic empty-state row shown while a list is loading or genuinely empty */
 .list-empty { color: var(--muted); font-size: 13px; text-align: center; padding: 10px 0; }
+
+/* skeleton placeholder rows shown in the groups/members lists while their
+   first fetch is in flight — same icon+label shape as `.list-row`/
+   `.member-row` so nothing jumps around once the real content arrives */
+.skeleton-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 12px; border-radius: 12px;
+}
+.skeleton-avatar { width: 34px; height: 34px; border-radius: 10px; flex-shrink: 0; }
+.skeleton-line { height: 12px; border-radius: 6px; flex: 1; max-width: 140px; }
+.skeleton-avatar, .skeleton-line {
+  background: linear-gradient(90deg, var(--border) 25%, #e2e3ee 37%, var(--border) 63%);
+  background-size: 400% 100%;
+  animation: skeleton-shimmer 1.4s ease infinite;
+}
+@keyframes skeleton-shimmer {
+  0% { background-position: 100% 50%; }
+  100% { background-position: 0 50%; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .skeleton-avatar, .skeleton-line { animation: none; }
+}
 
 /* icon square used for both group-row icons and role-selection avatars —
    same visual language, only the content (svg vs. initials) differs */
@@ -139,7 +181,7 @@ button.danger:active { opacity: 0.85; background: rgba(255, 82, 82, 0.08); }
 }
 .logo-mark {
   width: 64px; height: 64px; border-radius: 20px;
-  background: linear-gradient(135deg, var(--accent1), var(--accent2));
+  background: var(--gradient-brand);
   display: flex; align-items: center; justify-content: center;
   color: #fff; font-weight: 800; font-size: 22px;
   box-shadow: 0 12px 28px rgba(109, 91, 255, 0.28);
@@ -231,7 +273,7 @@ ul.list li:last-child { margin-bottom: 0; }
 .detail-header {
   display: flex; align-items: center; justify-content: space-between; gap: 12px;
   padding: 18px 16px 26px;
-  background: linear-gradient(135deg, var(--accent1), var(--accent2));
+  background: var(--gradient-brand);
   border-radius: 0 0 24px 24px;
   color: #fff;
 }

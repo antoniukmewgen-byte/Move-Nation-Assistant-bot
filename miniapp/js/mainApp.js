@@ -1,6 +1,13 @@
 import { apiFetch, safeJson } from "./api.js";
 import { showStep } from "./navigation.js";
-import { CHEVRON_SVG, GROUP_ICON_SVG, TRASH_ICON_SVG, escapeHtml, nameInitials } from "./render.js";
+import {
+  CHEVRON_SVG,
+  GROUP_ICON_SVG,
+  TRASH_ICON_SVG,
+  escapeHtml,
+  nameInitials,
+  skeletonListItems,
+} from "./render.js";
 import { showRoleStep } from "./onboarding.js";
 import { tg } from "./telegram.js";
 
@@ -75,6 +82,7 @@ document.getElementById("back-to-groups-btn").addEventListener("click", () => sw
 
 async function fetchGroups() {
   const list = document.getElementById("groups");
+  list.innerHTML = skeletonListItems();
   const res = await apiFetch("/groups");
   if (!res.ok) {
     list.innerHTML = '<li class="list-empty">Не вдалося завантажити групи.</li>';
@@ -125,6 +133,7 @@ async function openGroupDetail(groupId, title) {
 
 async function fetchMembers(groupId) {
   const list = document.getElementById("members");
+  list.innerHTML = skeletonListItems();
   const res = await apiFetch(`/members?group_id=${groupId}`);
   if (!res.ok) {
     list.innerHTML = '<li class="list-empty">Не вдалося завантажити учасників.</li>';

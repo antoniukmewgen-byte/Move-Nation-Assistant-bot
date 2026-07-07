@@ -1,14 +1,14 @@
 // --- small render helpers shared by several screens ---
 
 export const CHEVRON_SVG =
-  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"/></svg>';
+  '<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"/></svg>';
 
 export const GROUP_ICON_SVG =
-  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">' +
+  '<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">' +
   '<path d="M21 8 12 3 3 8v8l9 5 9-5Z"/><path d="M3 8l9 5 9-5"/><path d="M12 13v8"/></svg>';
 
 export const TRASH_ICON_SVG =
-  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">' +
+  '<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">' +
   '<path d="M4 7h16"/><path d="M9 7V4h6v3"/><path d="M6 7l1 13h10l1-13"/></svg>';
 
 // Curated 2-3 letter abbreviations for the fixed set of roles in app.db.models.Role,
@@ -37,6 +37,15 @@ export function nameInitials(fullName, username) {
   if (!source) return "?";
   const words = source.split(/\s+/);
   return words.length > 1 ? (words[0][0] + words[1][0]).toUpperCase() : source.slice(0, 2).toUpperCase();
+}
+
+// Shimmer placeholder rows shown while a list's first fetch is in flight —
+// see `.skeleton-row` in style.css for the shimmer animation itself.
+export function skeletonListItems(count = 3) {
+  return Array.from(
+    { length: count },
+    () => '<li class="skeleton-row"><span class="skeleton-avatar"></span><span class="skeleton-line"></span></li>'
+  ).join("");
 }
 
 export function escapeHtml(value) {
