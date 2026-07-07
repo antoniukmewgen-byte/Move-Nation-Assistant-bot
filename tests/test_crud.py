@@ -56,6 +56,24 @@ async def test_group_membership_and_client_tagging(db_session: AsyncSession) -> 
     assert [g.id for g in groups] == [100]
 
 
+async def test_remove_member_deletes_the_row_and_reports_success(db_session: AsyncSession) -> None:
+    await crud.create_group_record(db_session, group_id=100, title="Group A", created_by_userbot=True)
+    await crud.get_or_create_user(db_session, 2, "client", "Client")
+    await crud.add_member_tag(db_session, 100, 2, CLIENT_TAG)
+    await db_session.flush()
+
+    removed = await crud.remove_member(db_session, 100, 2)
+
+    assert removed is True
+    assert await crud.get_group_members(db_session, 100) == []
+
+
+async def test_remove_member_reports_false_when_not_a_member(db_session: AsyncSession) -> None:
+    await crud.create_group_record(db_session, group_id=100, title="Group A", created_by_userbot=True)
+
+    assert await crud.remove_member(db_session, 100, 999) is False
+
+
 async def test_notify_recipients_are_scoped_to_group_and_role(db_session: AsyncSession) -> None:
     await crud.create_group_record(db_session, group_id=100, title="Group A", created_by_userbot=True)
     await crud.create_group_record(db_session, group_id=200, title="Group B", created_by_userbot=True)

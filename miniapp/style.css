@@ -267,6 +267,15 @@ ul.member-list { list-style: none; margin: 0; padding: 0; }
   background: #e3faf0; color: #00a173; flex-shrink: 0;
 }
 
+/* trash icon shown only on client rows (see mainApp.js::renderMembers) */
+.member-remove-btn {
+  width: 28px; height: 28px; border-radius: 8px; background: transparent;
+  border: none; color: var(--muted); display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0; margin-left: 2px; transition: background 0.15s ease, color 0.15s ease;
+}
+.member-remove-btn svg { width: 16px; height: 16px; }
+.member-remove-btn:active { background: rgba(255, 92, 106, 0.1); color: var(--danger); }
+
 /* --- bottom tab bar --- */
 .tabbar {
   position: absolute; left: 16px; right: 16px; bottom: 14px;

@@ -31,6 +31,11 @@ class TagRequest(BaseModel):
     tag: str = Field(min_length=1, max_length=64)
 
 
+class RemoveMemberRequest(BaseModel):
+    group_id: int
+    user_id: int
+
+
 class RoleOut(BaseModel):
     name: str
     value: str

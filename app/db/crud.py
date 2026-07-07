@@ -79,6 +79,24 @@ async def add_member_tag(session: AsyncSession, group_id: int, user_id: int, tag
     return member
 
 
+async def remove_member(session: AsyncSession, group_id: int, user_id: int) -> bool:
+    """Прибирає учасника (тег) з конкретної групи.
+
+    Повертає True, якщо такий рядок дійсно існував і був видалений, False —
+    якщо цього user_id вже не було серед учасників групи (нема що видаляти,
+    а не помилка — той самий підхід, що й у delete_group).
+    """
+    result = await session.execute(
+        select(GroupMember).where(GroupMember.group_id == group_id, GroupMember.user_id == user_id)
+    )
+    member = result.scalar_one_or_none()
+    if member is None:
+        return False
+    await session.delete(member)
+    await session.flush()
+    return True
+
+
 async def get_group(session: AsyncSession, group_id: int) -> Group | None:
     return await session.get(Group, group_id)
 
@@ -140,6 +158,11 @@ async def mark_awaiting_response(
         group.last_message_from_id = from_user_id
         group.last_message_at = at
         group.awaiting_response = True
+        # Новий (або черговий) неопрацьований меседж скидає лічильник нагадувань:
+        # перше нагадування по цьому циклу знову має чекати повний інтервал від
+        # останнього повідомлення клієнта, а не спиратись на час попереднього
+        # нагадування з давнього циклу.
+        group.last_reminder_at = None
 
 
 async def clear_awaiting_response(session: AsyncSession, group_id: int) -> None:

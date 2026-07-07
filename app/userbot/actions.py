@@ -134,6 +134,36 @@ async def add_client_to_group(
         await client.disconnect()
 
 
+async def remove_member_from_group(actor_session: str, group_id: int, user_id: int) -> bool:
+    """Прибирає учасника з групи в Telegram від імені співробітника, який ініціював дію.
+
+    Симетрично до add_client_to_group і delete_group вище: якщо в акаунта,
+    чиєю сесією діємо, немає прав кікнути учасника (наприклад, звичайний
+    учасник намагається видалити іншого), або цього учасника вже нема в
+    чаті, або Telethon ще не бачив цей user_id у цьому чаті і не може
+    резолвнути його в entity — просто повертаємо False замість падіння з
+    винятком. Прибирання тега з нашої БД (app/db/crud.py::remove_member) не
+    повинно залежати від того, чи вдалося кікнути людину в самому Telegram —
+    інакше застарілі/недоступні записи неможливо було б прибрати з застосунку.
+    """
+    client = _client_for(actor_session)
+    await client.connect()
+
+    try:
+        try:
+            channel = await client.get_entity(group_id)
+        except (ValueError, ChannelPrivateError):
+            return False
+
+        try:
+            await client.kick_participant(channel, user_id)
+            return True
+        except (ChatAdminRequiredError, UserNotParticipantError, ValueError):
+            return False
+    finally:
+        await client.disconnect()
+
+
 async def delete_group(actor_session: str, group_id: int) -> bool:
     """Видаляє супергрупу в Telegram від імені співробітника, який ініціював дію.
 

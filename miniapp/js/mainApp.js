@@ -1,12 +1,43 @@
 import { apiFetch, safeJson } from "./api.js";
 import { showStep } from "./navigation.js";
-import { CHEVRON_SVG, GROUP_ICON_SVG, escapeHtml, nameInitials } from "./render.js";
+import { CHEVRON_SVG, GROUP_ICON_SVG, TRASH_ICON_SVG, escapeHtml, nameInitials } from "./render.js";
 import { showRoleStep } from "./onboarding.js";
 import { tg } from "./telegram.js";
 
 // --- Main app: groups (tab) / profile (tab) / group detail (drill-down) ---
 
 let selectedGroupId = null;
+
+// Mirrors app/db/models.py::CLIENT_TAG — only client rows get a remove
+// button; staff members are managed via /tag, not this delete flow.
+const CLIENT_TAG = "Клієнт";
+
+// Status texts ("Групу створено.", "Клієнта додано.", error messages, etc.)
+// should auto-dismiss so they don't linger on screen forever. Each status
+// element gets its own pending-timeout slot here so that setting the text
+// again (e.g. "Створюю…" immediately followed by the result) cancels any
+// previously scheduled clear instead of stacking timeouts that could wipe
+// out a newer message early.
+const statusClearTimeouts = new WeakMap();
+const STATUS_AUTO_CLEAR_MS = 5000;
+
+function setStatus(el, text, kind) {
+  const pending = statusClearTimeouts.get(el);
+  if (pending) clearTimeout(pending);
+
+  el.textContent = text;
+  el.classList.remove("ok", "error");
+  if (kind) el.classList.add(kind);
+
+  if (text) {
+    const timeoutId = setTimeout(() => {
+      el.textContent = "";
+      el.classList.remove("ok", "error");
+      statusClearTimeouts.delete(el);
+    }, STATUS_AUTO_CLEAR_MS);
+    statusClearTimeouts.set(el, timeoutId);
+  }
+}
 
 export async function enterMainApp(me, initialTab = "groups") {
   document.getElementById("profile-avatar").textContent = nameInitials(me.full_name, me.username);
@@ -79,11 +110,10 @@ function renderGroups(groups) {
 async function openGroupDetail(groupId, title) {
   selectedGroupId = groupId;
   document.getElementById("group-detail-title").textContent = title;
-  document.getElementById("add-client-status").textContent = "";
+  setStatus(document.getElementById("members-status"), "");
+  setStatus(document.getElementById("add-client-status"), "");
   document.getElementById("client-identifier").value = "";
-  const deleteStatus = document.getElementById("delete-group-status");
-  deleteStatus.textContent = "";
-  deleteStatus.classList.remove("ok", "error");
+  setStatus(document.getElementById("delete-group-status"), "");
 
   document.getElementById("screen-groups").hidden = true;
   document.getElementById("screen-profile").hidden = true;
@@ -119,8 +149,52 @@ function renderMembers(members) {
       `<div class="member-avatar">${escapeHtml(nameInitials(m.name))}</div>` +
       `<div style="flex:1"><div class="member-name">${escapeHtml(m.name)}</div></div>` +
       `<span class="role-badge">${escapeHtml(m.tag)}</span>`;
+
+    // Only clients can be removed from here — staff membership is managed
+    // via /register + /tag in the group chat itself, not from this list.
+    if (m.tag === CLIENT_TAG) {
+      const removeBtn = document.createElement("button");
+      removeBtn.className = "member-remove-btn";
+      removeBtn.type = "button";
+      removeBtn.setAttribute("aria-label", `Видалити клієнта ${m.name}`);
+      removeBtn.innerHTML = TRASH_ICON_SVG;
+      removeBtn.addEventListener("click", () => confirmRemoveMember(m.user_id, m.name));
+      li.appendChild(removeBtn);
+    }
+
     list.appendChild(li);
   });
+}
+
+function confirmRemoveMember(userId, name) {
+  const confirmMessage = `Видалити клієнта «${name}» з групи?`;
+  // Same native-confirm-with-fallback pattern as deleteGroupBtn's handler below.
+  if (tg?.showConfirm) {
+    tg.showConfirm(confirmMessage, (confirmed) => {
+      if (confirmed) removeMember(userId);
+    });
+  } else if (window.confirm(confirmMessage)) {
+    removeMember(userId);
+  }
+}
+
+async function removeMember(userId) {
+  const status = document.getElementById("members-status");
+  setStatus(status, "Видаляю…");
+
+  const res = await apiFetch("/members/remove", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ group_id: selectedGroupId, user_id: userId }),
+  });
+
+  const data = await safeJson(res);
+  if (res.ok) {
+    setStatus(status, "Клієнта видалено.", "ok");
+    await fetchMembers(selectedGroupId);
+  } else {
+    setStatus(status, `Помилка: ${data.detail || "спробуй ще раз."}`, "error");
+  }
 }
 
 const createGroupBtn = document.getElementById("create-group-btn");
@@ -128,15 +202,13 @@ createGroupBtn.addEventListener("click", async () => {
   const titleInput = document.getElementById("group-title");
   const title = titleInput.value.trim();
   const status = document.getElementById("create-status");
-  status.classList.remove("ok", "error");
   if (!title) {
-    status.textContent = "Вкажи назву групи.";
-    status.classList.add("error");
+    setStatus(status, "Вкажи назву групи.", "error");
     return;
   }
 
   createGroupBtn.disabled = true;
-  status.textContent = "Створюю…";
+  setStatus(status, "Створюю…");
   const res = await apiFetch("/groups", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -146,13 +218,11 @@ createGroupBtn.addEventListener("click", async () => {
   const data = await safeJson(res);
   createGroupBtn.disabled = false;
   if (res.ok) {
-    status.textContent = "Групу створено.";
-    status.classList.add("ok");
+    setStatus(status, "Групу створено.", "ok");
     titleInput.value = "";
     await fetchGroups();
   } else {
-    status.textContent = `Помилка: ${data.detail || "спробуй ще раз."}`;
-    status.classList.add("error");
+    setStatus(status, `Помилка: ${data.detail || "спробуй ще раз."}`, "error");
   }
 });
 
@@ -161,11 +231,10 @@ addClientBtn.addEventListener("click", async () => {
   const identifierInput = document.getElementById("client-identifier");
   const identifier = identifierInput.value.trim();
   const status = document.getElementById("add-client-status");
-  status.classList.remove("ok", "error");
   if (!selectedGroupId || !identifier) return;
 
   addClientBtn.disabled = true;
-  status.textContent = "Додаю…";
+  setStatus(status, "Додаю…");
   const res = await apiFetch("/members/add-client", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -175,15 +244,15 @@ addClientBtn.addEventListener("click", async () => {
   const data = await safeJson(res);
   addClientBtn.disabled = false;
   if (res.ok) {
-    status.textContent = data.invite_link
-      ? `Перешли клієнту посилання: ${data.invite_link}`
-      : "Клієнта додано.";
-    status.classList.add("ok");
+    setStatus(
+      status,
+      data.invite_link ? `Перешли клієнту посилання: ${data.invite_link}` : "Клієнта додано.",
+      "ok"
+    );
     identifierInput.value = "";
     await fetchMembers(selectedGroupId);
   } else {
-    status.textContent = `Помилка: ${data.detail || "спробуй ще раз."}`;
-    status.classList.add("error");
+    setStatus(status, `Помилка: ${data.detail || "спробуй ще раз."}`, "error");
   }
 });
 
@@ -206,21 +275,18 @@ deleteGroupBtn.addEventListener("click", () => {
 
 async function deleteSelectedGroup() {
   const status = document.getElementById("delete-group-status");
-  status.classList.remove("ok", "error");
   deleteGroupBtn.disabled = true;
-  status.textContent = "Видаляю…";
+  setStatus(status, "Видаляю…");
 
   const res = await apiFetch(`/groups/${selectedGroupId}`, { method: "DELETE" });
   const data = await safeJson(res);
   deleteGroupBtn.disabled = false;
 
   if (res.ok) {
-    status.textContent = "Групу видалено.";
-    status.classList.add("ok");
+    setStatus(status, "Групу видалено.", "ok");
     switchTab("groups");
     await fetchGroups();
   } else {
-    status.textContent = `Помилка: ${data.detail || "спробуй ще раз."}`;
-    status.classList.add("error");
+    setStatus(status, `Помилка: ${data.detail || "спробуй ще раз."}`, "error");
   }
 }
