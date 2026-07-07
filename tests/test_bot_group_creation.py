@@ -8,6 +8,7 @@ from app.bot.handlers import group_creation as group_creation_handlers
 from app.bot.states import GroupCreation
 from app.db import crud
 from app.db.models import Base, Role
+from app.services import group_service
 from tests.bot_fakes import FakeChat, FakeMessage, FakeUser, make_fsm_context
 
 pytestmark = pytest.mark.asyncio
@@ -20,6 +21,10 @@ async def _patch_db(monkeypatch: pytest.MonkeyPatch):
         await conn.run_sync(Base.metadata.create_all)
     sessionmaker = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
     monkeypatch.setattr(group_creation_handlers, "async_session", sessionmaker)
+    # process_group_title (below) delegates to group_service.create_group,
+    # which owns its own async_session reference — must be patched too, or
+    # it would fall through to the real (file-based) database.
+    monkeypatch.setattr(group_service, "async_session", sessionmaker)
     yield sessionmaker
     await engine.dispose()
 
@@ -74,14 +79,14 @@ async def test_process_group_title_success_creates_group_and_tags_staff(
         await crud.set_user_session(session, 1, "encrypted-session-string")
         await session.commit()
 
-    monkeypatch.setattr(group_creation_handlers, "decrypt_session", lambda s: "decrypted-" + s)
+    monkeypatch.setattr(group_service, "decrypt_session", lambda s: "decrypted-" + s)
 
     async def fake_create_group_with_team(session_string, title, staff):
         assert session_string == "decrypted-encrypted-session-string"
         assert title == "New Group"
         return 555
 
-    monkeypatch.setattr(group_creation_handlers, "create_group_with_team", fake_create_group_with_team)
+    monkeypatch.setattr(group_service, "create_group_with_team", fake_create_group_with_team)
 
     message = FakeMessage(chat=FakeChat(id=1), from_user=FakeUser(id=1), text="New Group")
     state = make_fsm_context()
@@ -108,7 +113,7 @@ async def test_process_group_title_requires_connected_account(_patch_db) -> None
 
     await group_creation_handlers.process_group_title(message, state)
 
-    assert "/connect" in message.answers[0]
+    assert "/connect" in message.answers[-1]
 
 
 async def test_process_group_title_reports_flood_wait(_patch_db, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -117,12 +122,12 @@ async def test_process_group_title_reports_flood_wait(_patch_db, monkeypatch: py
         await crud.set_user_session(session, 1, "encrypted-session-string")
         await session.commit()
 
-    monkeypatch.setattr(group_creation_handlers, "decrypt_session", lambda s: s)
+    monkeypatch.setattr(group_service, "decrypt_session", lambda s: s)
 
     async def fake_create_group_with_team(*_args):
         raise FloodWaitError(request=None, capture=20)
 
-    monkeypatch.setattr(group_creation_handlers, "create_group_with_team", fake_create_group_with_team)
+    monkeypatch.setattr(group_service, "create_group_with_team", fake_create_group_with_team)
 
     message = FakeMessage(chat=FakeChat(id=1), from_user=FakeUser(id=1), text="New Group")
     state = make_fsm_context()
@@ -141,12 +146,12 @@ async def test_process_group_title_reports_generic_failure_and_logs(
         await crud.set_user_session(session, 1, "encrypted-session-string")
         await session.commit()
 
-    monkeypatch.setattr(group_creation_handlers, "decrypt_session", lambda s: s)
+    monkeypatch.setattr(group_service, "decrypt_session", lambda s: s)
 
     async def fake_create_group_with_team(*_args):
         raise RuntimeError("boom")
 
-    monkeypatch.setattr(group_creation_handlers, "create_group_with_team", fake_create_group_with_team)
+    monkeypatch.setattr(group_service, "create_group_with_team", fake_create_group_with_team)
 
     message = FakeMessage(chat=FakeChat(id=1), from_user=FakeUser(id=1), text="New Group")
     state = make_fsm_context()

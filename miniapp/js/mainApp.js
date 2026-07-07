@@ -148,6 +148,7 @@ function renderMembers(members) {
     li.innerHTML =
       `<div class="member-avatar">${escapeHtml(nameInitials(m.name))}</div>` +
       `<div style="flex:1"><div class="member-name">${escapeHtml(m.name)}</div></div>` +
+      (m.pending ? '<span class="badge" title="Ще не приєднався(лась) до групи">очікує</span>' : "") +
       `<span class="role-badge">${escapeHtml(m.tag)}</span>`;
 
     // Only clients can be removed from here — staff membership is managed

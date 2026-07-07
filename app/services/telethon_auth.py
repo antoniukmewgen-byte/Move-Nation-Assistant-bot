@@ -24,8 +24,10 @@ would need to change (shared storage + webhooks) to lift this.
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import logging
+from collections import defaultdict
 from dataclasses import dataclass
 
 from telethon import TelegramClient
@@ -48,6 +50,18 @@ logger = logging.getLogger(__name__)
 _pending_clients: dict[int, TelegramClient] = {}
 _pending_phone_data: dict[int, dict[str, str]] = {}
 
+# Guards the two dicts above against concurrent calls for the *same*
+# user_id — e.g. a double-tap on "Отримати код" in the Mini App, or the bot
+# and Mini App being used at once, could otherwise interleave two
+# start_phone_auth calls and leak one of the two TelegramClient connections
+# (the second call's `_pending_clients[user_id] = client` assignment would
+# silently overwrite the first, which never gets `.disconnect()`-ed).
+# `defaultdict` is safe here despite never being explicitly cleaned up per
+# user: it only ever holds cheap `asyncio.Lock` objects, one per user_id
+# that has ever attempted /connect, for the lifetime of this single-process
+# app (see module docstring above).
+_locks: dict[int, asyncio.Lock] = defaultdict(asyncio.Lock)
+
 
 @dataclass(frozen=True)
 class AuthStepResult:
@@ -59,8 +73,16 @@ async def start_phone_auth(
     user_id: int, username: str | None, full_name: str | None, phone: str
 ) -> AuthStepResult:
     """Kick off a login attempt: send the Telegram code to the user's own account."""
-    await cancel_auth(user_id)
+    async with _locks[user_id]:
+        # Uses the lock-free helper, not the public cancel_auth() — asyncio.Lock
+        # isn't reentrant, and we're already holding _locks[user_id] here.
+        await _cancel_auth_locked(user_id)
+        return await _start_phone_auth_locked(user_id, username, full_name, phone)
 
+
+async def _start_phone_auth_locked(
+    user_id: int, username: str | None, full_name: str | None, phone: str
+) -> AuthStepResult:
     client = TelegramClient(StringSession(), settings.api_id, settings.api_hash)
 
     try:
@@ -111,43 +133,50 @@ async def start_phone_auth(
 
 
 async def submit_code(user_id: int, code: str) -> AuthStepResult:
-    client = _pending_clients.get(user_id)
-    data = _pending_phone_data.get(user_id)
-    if client is None or data is None:
-        return AuthStepResult(status="error", error="Сесія авторизації втрачена. Почни знову.")
+    async with _locks[user_id]:
+        client = _pending_clients.get(user_id)
+        data = _pending_phone_data.get(user_id)
+        if client is None or data is None:
+            return AuthStepResult(status="error", error="Сесія авторизації втрачена. Почни знову.")
 
-    try:
-        await client.sign_in(phone=data["phone"], code=code, phone_code_hash=data["phone_code_hash"])
-    except SessionPasswordNeededError:
-        return AuthStepResult(status="password_required")
-    except (PhoneCodeInvalidError, PhoneCodeExpiredError):
-        await cancel_auth(user_id)
-        return AuthStepResult(status="error", error="Код невірний або застарів. Почни знову.")
-    except Exception as exc:
-        logger.exception("Не вдалося підтвердити код для user_id=%s", user_id)
-        await cancel_auth(user_id)
-        return AuthStepResult(status="error", error=f"Не вдалося увійти: {exc}")
+        try:
+            await client.sign_in(phone=data["phone"], code=code, phone_code_hash=data["phone_code_hash"])
+        except SessionPasswordNeededError:
+            return AuthStepResult(status="password_required")
+        except (PhoneCodeInvalidError, PhoneCodeExpiredError):
+            await _cancel_auth_locked(user_id)
+            return AuthStepResult(status="error", error="Код невірний або застарів. Почни знову.")
+        except Exception as exc:
+            logger.exception("Не вдалося підтвердити код для user_id=%s", user_id)
+            await _cancel_auth_locked(user_id)
+            return AuthStepResult(status="error", error=f"Не вдалося увійти: {exc}")
 
-    return await _finish(user_id, client)
+        return await _finish(user_id, client)
 
 
 async def submit_password(user_id: int, password: str) -> AuthStepResult:
-    client = _pending_clients.get(user_id)
-    if client is None:
-        return AuthStepResult(status="error", error="Сесія авторизації втрачена. Почни знову.")
+    async with _locks[user_id]:
+        client = _pending_clients.get(user_id)
+        if client is None:
+            return AuthStepResult(status="error", error="Сесія авторизації втрачена. Почни знову.")
 
-    try:
-        await client.sign_in(password=password)
-    except Exception as exc:
-        logger.warning("Не вдалося завершити 2FA для user_id=%s: %s", user_id, exc)
-        await cancel_auth(user_id)
-        return AuthStepResult(status="error", error=f"Не вдалося увійти: {exc}")
+        try:
+            await client.sign_in(password=password)
+        except Exception as exc:
+            logger.warning("Не вдалося завершити 2FA для user_id=%s: %s", user_id, exc)
+            await _cancel_auth_locked(user_id)
+            return AuthStepResult(status="error", error=f"Не вдалося увійти: {exc}")
 
-    return await _finish(user_id, client)
+        return await _finish(user_id, client)
 
 
 async def cancel_auth(user_id: int) -> None:
     """Drop any live client waiting on a code/password for this user, if any."""
+    async with _locks[user_id]:
+        await _cancel_auth_locked(user_id)
+
+
+async def _cancel_auth_locked(user_id: int) -> None:
     client = _pending_clients.pop(user_id, None)
     _pending_phone_data.pop(user_id, None)
     if client is not None:

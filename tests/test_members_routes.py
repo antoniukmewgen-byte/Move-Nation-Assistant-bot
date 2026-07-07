@@ -14,6 +14,7 @@ from app.api.routes import members as members_routes
 from app.api.schemas import AddClientRequest, RemoveMemberRequest, TagRequest
 from app.db import crud
 from app.db.models import CLIENT_TAG, Base
+from app.services import group_service
 
 pytestmark = pytest.mark.asyncio
 
@@ -25,6 +26,10 @@ async def _patch_db(monkeypatch: pytest.MonkeyPatch):
         await conn.run_sync(Base.metadata.create_all)
     sessionmaker = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
     monkeypatch.setattr(members_routes, "async_session", sessionmaker)
+    # add_client (below) delegates to group_service.add_client, which owns
+    # its own async_session reference — must be patched too, or it would
+    # fall through to the real (file-based) database.
+    monkeypatch.setattr(group_service, "async_session", sessionmaker)
     yield sessionmaker
     await engine.dispose()
 
@@ -121,7 +126,7 @@ async def test_add_client_success_persists_client_and_tag(_patch_db, monkeypatch
         await crud.set_user_session(session, 1, "encrypted-session-string")
         await session.commit()
 
-    monkeypatch.setattr(members_routes, "decrypt_session", lambda s: "decrypted-" + s)
+    monkeypatch.setattr(group_service, "decrypt_session", lambda s: "decrypted-" + s)
 
     async def fake_add_client_to_group(session_string, group_id, identifier):
         assert session_string == "decrypted-encrypted-session-string"
@@ -129,7 +134,7 @@ async def test_add_client_success_persists_client_and_tag(_patch_db, monkeypatch
         assert identifier == "@newclient"
         return 42, "https://t.me/+invitelink"
 
-    monkeypatch.setattr(members_routes, "add_client_to_group", fake_add_client_to_group)
+    monkeypatch.setattr(group_service, "add_client_to_group", fake_add_client_to_group)
 
     result = await members_routes.add_client(
         AddClientRequest(group_id=100, identifier="@newclient"), requested_by=1
@@ -149,12 +154,12 @@ async def test_add_client_user_not_found_returns_404(_patch_db, monkeypatch: pyt
         await crud.set_user_session(session, 1, "encrypted-session-string")
         await session.commit()
 
-    monkeypatch.setattr(members_routes, "decrypt_session", lambda s: s)
+    monkeypatch.setattr(group_service, "decrypt_session", lambda s: s)
 
     async def fake_add_client_to_group(*_args):
         return None, None
 
-    monkeypatch.setattr(members_routes, "add_client_to_group", fake_add_client_to_group)
+    monkeypatch.setattr(group_service, "add_client_to_group", fake_add_client_to_group)
 
     with pytest.raises(HTTPException) as exc_info:
         await members_routes.add_client(AddClientRequest(group_id=100, identifier="@ghost"), requested_by=1)
@@ -168,12 +173,12 @@ async def test_add_client_translates_flood_wait_to_429(_patch_db, monkeypatch: p
         await crud.set_user_session(session, 1, "encrypted-session-string")
         await session.commit()
 
-    monkeypatch.setattr(members_routes, "decrypt_session", lambda s: s)
+    monkeypatch.setattr(group_service, "decrypt_session", lambda s: s)
 
     async def fake_add_client_to_group(*_args):
         raise FloodWaitError(request=None, capture=15)
 
-    monkeypatch.setattr(members_routes, "add_client_to_group", fake_add_client_to_group)
+    monkeypatch.setattr(group_service, "add_client_to_group", fake_add_client_to_group)
 
     with pytest.raises(HTTPException) as exc_info:
         await members_routes.add_client(AddClientRequest(group_id=100, identifier="@client"), requested_by=1)

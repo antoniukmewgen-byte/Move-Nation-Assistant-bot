@@ -15,6 +15,7 @@ from app.api.routes import groups as groups_routes
 from app.api.schemas import GroupCreateRequest
 from app.db import crud
 from app.db.models import Base, Role
+from app.services import group_service
 
 pytestmark = pytest.mark.asyncio
 
@@ -26,6 +27,10 @@ async def _patch_db(monkeypatch: pytest.MonkeyPatch):
         await conn.run_sync(Base.metadata.create_all)
     sessionmaker = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
     monkeypatch.setattr(groups_routes, "async_session", sessionmaker)
+    # create_group (below) delegates to group_service.create_group, which
+    # owns its own async_session reference — must be patched too, or it
+    # would fall through to the real (file-based) database.
+    monkeypatch.setattr(group_service, "async_session", sessionmaker)
     yield sessionmaker
     await engine.dispose()
 
@@ -62,7 +67,7 @@ async def test_create_group_persists_group_and_tags_staff(_patch_db, monkeypatch
         await crud.set_user_role(session, 1, Role.MANAGER)
         await session.commit()
 
-    monkeypatch.setattr(groups_routes, "decrypt_session", lambda s: "decrypted-" + s)
+    monkeypatch.setattr(group_service, "decrypt_session", lambda s: "decrypted-" + s)
 
     async def fake_create_group_with_team(session_string, title, staff):
         assert session_string == "decrypted-encrypted-session-string"
@@ -70,7 +75,7 @@ async def test_create_group_persists_group_and_tags_staff(_patch_db, monkeypatch
         assert staff == [(1, "alice", Role.MANAGER)]
         return 555
 
-    monkeypatch.setattr(groups_routes, "create_group_with_team", fake_create_group_with_team)
+    monkeypatch.setattr(group_service, "create_group_with_team", fake_create_group_with_team)
 
     result = await groups_routes.create_group(GroupCreateRequest(title="New Group"), requested_by=1)
 
@@ -89,12 +94,12 @@ async def test_create_group_translates_flood_wait_to_429(_patch_db, monkeypatch:
         await crud.set_user_session(session, 1, "encrypted-session-string")
         await session.commit()
 
-    monkeypatch.setattr(groups_routes, "decrypt_session", lambda s: s)
+    monkeypatch.setattr(group_service, "decrypt_session", lambda s: s)
 
     async def fake_create_group_with_team(*_args):
         raise FloodWaitError(request=None, capture=30)
 
-    monkeypatch.setattr(groups_routes, "create_group_with_team", fake_create_group_with_team)
+    monkeypatch.setattr(group_service, "create_group_with_team", fake_create_group_with_team)
 
     with pytest.raises(HTTPException) as exc_info:
         await groups_routes.create_group(GroupCreateRequest(title="New Group"), requested_by=1)
@@ -110,12 +115,12 @@ async def test_create_group_translates_unexpected_error_to_502(
         await crud.set_user_session(session, 1, "encrypted-session-string")
         await session.commit()
 
-    monkeypatch.setattr(groups_routes, "decrypt_session", lambda s: s)
+    monkeypatch.setattr(group_service, "decrypt_session", lambda s: s)
 
     async def fake_create_group_with_team(*_args):
         raise RuntimeError("boom")
 
-    monkeypatch.setattr(groups_routes, "create_group_with_team", fake_create_group_with_team)
+    monkeypatch.setattr(group_service, "create_group_with_team", fake_create_group_with_team)
 
     with caplog.at_level("ERROR"), pytest.raises(HTTPException) as exc_info:
         await groups_routes.create_group(GroupCreateRequest(title="New Group"), requested_by=1)

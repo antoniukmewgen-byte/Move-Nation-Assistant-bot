@@ -18,6 +18,7 @@ class MemberOut(BaseModel):
     user_id: int
     name: str
     tag: str
+    pending: bool
 
 
 class AddClientRequest(BaseModel):

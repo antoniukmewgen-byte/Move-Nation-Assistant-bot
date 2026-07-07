@@ -1,7 +1,7 @@
 import enum
 from datetime import datetime
 
-from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, String
+from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Index, String, UniqueConstraint
 from sqlalchemy import Enum as SAEnum
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -62,11 +62,30 @@ class Group(Base):
 
 class GroupMember(Base):
     __tablename__ = "group_members"
+    __table_args__ = (
+        # One person can legitimately hold several *distinct* tags in the same
+        # group (e.g. "Менеджер" + "Тімлід" — see tests/test_members_routes.py
+        # ::test_tag_member_adds_a_new_tag_row), so the constraint is on the
+        # full (group_id, user_id, tag) triple, not just (group_id, user_id).
+        # It exists to make retrying the *same* assignment safe (a double-tap
+        # on "add client" in the Mini App, or a retried /tag) — see
+        # crud.add_member_tag, which catches the resulting IntegrityError and
+        # treats it as an idempotent no-op instead of letting it surface.
+        UniqueConstraint("group_id", "user_id", "tag", name="uq_group_members_group_user_tag"),
+        Index("ix_group_members_group_id", "group_id"),
+        Index("ix_group_members_user_id", "user_id"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     group_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("groups.id"))
     user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.id"))
     tag: Mapped[str] = mapped_column(String(64))
+    # True while a client was only sent an invite link (privacy settings blocked
+    # a direct add — see app/userbot/actions.py::add_client_to_group) and hasn't
+    # actually joined the chat yet. Cleared by
+    # app/bot/handlers/messages.py::on_member_joined_group once Telegram
+    # confirms the join. Irrelevant (always False) for staff tag rows.
+    pending: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
     added_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     group: Mapped["Group"] = relationship(back_populates="members")

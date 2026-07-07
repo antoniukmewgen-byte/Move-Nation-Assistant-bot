@@ -1,5 +1,3 @@
-import logging
-
 from aiogram import F, Router
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
@@ -10,12 +8,8 @@ from telethon.errors import FloodWaitError
 from app.bot.guards import require_editable_message, require_text, require_user
 from app.bot.states import AddClient
 from app.db import crud
-from app.db.models import CLIENT_TAG
 from app.db.session import async_session
-from app.services.crypto import decrypt_session
-from app.userbot.actions import add_client_to_group
-
-logger = logging.getLogger(__name__)
+from app.services import group_service
 
 router = Router()
 
@@ -63,38 +57,23 @@ async def process_contact(message: Message, state: FSMContext) -> None:
     identifier = require_text(message).strip()
     await state.clear()
 
-    async with async_session() as session:
-        encrypted_session = await crud.get_user_session(session, sender.id)
-
-    if encrypted_session is None:
+    try:
+        _client_user_id, invite_link = await group_service.add_client(sender.id, group_id, identifier)
+    except group_service.GroupAccessDeniedError:
+        await message.answer("Немає доступу до цієї групи.")
+        return
+    except group_service.NotConnectedError:
         await message.answer("Спочатку підключи свій Telegram-акаунт: /connect")
         return
-
-    try:
-        client_user_id, invite_link = await add_client_to_group(
-            decrypt_session(encrypted_session), group_id, identifier
-        )
     except FloodWaitError as exc:
         await message.answer(f"Забагато запитів до Telegram, спробуй через {exc.seconds} с.")
         return
-    except Exception:
-        logger.exception(
-            "Не вдалося додати клієнта «%s» у групу %s для user_id=%s",
-            identifier,
-            group_id,
-            sender.id,
-        )
+    except group_service.AddClientFailedError:
         await message.answer("Не вдалося додати клієнта. Спробуй пізніше.")
         return
-
-    if client_user_id is None:
+    except group_service.ClientNotFoundError:
         await message.answer("Користувача не знайдено. Перевір username.")
         return
-
-    async with async_session() as session:
-        await crud.get_or_create_user(session, client_user_id, identifier.lstrip("@"), None)
-        await crud.add_member_tag(session, group_id, client_user_id, CLIENT_TAG)
-        await session.commit()
 
     if invite_link:
         await message.answer(f"Не вдалось додати напряму. Перешли клієнту посилання: {invite_link}")

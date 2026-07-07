@@ -24,6 +24,7 @@ async def cmd_team(message: Message) -> None:
     lines = []
     for m in members:
         name = m.user.full_name or m.user.username or str(m.user_id)
-        lines.append(f"• {name} — {m.tag}")
+        suffix = " (очікує приєднання)" if m.pending else ""
+        lines.append(f"• {name} — {m.tag}{suffix}")
 
     await message.answer("\n".join(lines))

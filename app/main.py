@@ -2,6 +2,8 @@ import asyncio
 import logging
 
 import uvicorn
+from aiogram.exceptions import TelegramBadRequest
+from aiogram.types import MenuButtonWebApp, WebAppInfo
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from app.api.app import api
@@ -27,6 +29,24 @@ async def run_api(server: uvicorn.Server) -> None:
     await server.serve()
 
 
+async def _configure_menu_button() -> None:
+    """Прив'язує кнопку меню бота до Mini App за `settings.webapp_url`.
+
+    `webapp_url` вже використовується самим Mini App-фронтендом (напряму з
+    браузера) і `app/services/telegram_auth.py` (перевірка initData), але
+    раніше ніде не передавався в Bot API — кнопка меню не показувала
+    застосунок, і його можна було відкрити лише посиланням ззовні. Telegram
+    вимагає https для web_app URL; локальний dev-дефолт (`http://127.0.0.1:...`)
+    це порушує, тож помилку від Bot API тут лише логуємо, а не валимо запуск.
+    """
+    try:
+        await bot.set_chat_menu_button(
+            menu_button=MenuButtonWebApp(text="Відкрити застосунок", web_app=WebAppInfo(url=settings.webapp_url))
+        )
+    except TelegramBadRequest:
+        logger.warning("Не вдалося встановити кнопку меню Mini App (webapp_url=%s)", settings.webapp_url)
+
+
 async def main() -> None:
     # This entrypoint assumes exactly one instance of the whole process is
     # running at any given time — see README.md, "⚠️ Лише один інстанс".
@@ -40,6 +60,8 @@ async def main() -> None:
     scheduler = AsyncIOScheduler()
     scheduler.add_job(send_reminders, "interval", minutes=settings.reminder_interval_minutes)
     scheduler.start()
+
+    await _configure_menu_button()
 
     uvicorn_config = uvicorn.Config(api, host=settings.api_host, port=settings.api_port, log_level="info")
     server = uvicorn.Server(uvicorn_config)

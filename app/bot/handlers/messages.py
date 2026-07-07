@@ -86,6 +86,27 @@ async def on_bot_removed_from_group(event: ChatMemberUpdated) -> None:
         await session.commit()
 
 
+@router.chat_member(ChatMemberUpdatedFilter(member_status_changed=JOIN_TRANSITION))
+async def on_member_joined_group(event: ChatMemberUpdated) -> None:
+    """Знімає прапорець `pending` із клієнта, коли він дійсно приєднався за лінком.
+
+    `group_service.add_client` (app/services/group_service.py) ставить
+    `pending=True`, коли прямий додаток клієнта не вдався через приватність
+    і йому лишилось надіслати лінк-запрошення — до цього моменту він ще не
+    в чаті, тож Mini App/команда /register не повинні показувати його як
+    повноцінного учасника. `router.chat_member` (на відміну від
+    `router.my_chat_member` вище) якраз і стежить за змінами статусу *інших*
+    учасників чату, а не самого бота, і спрацьовує, коли Telegram підтверджує
+    фактичне приєднання.
+    """
+    if event.chat.type not in ("group", "supergroup"):
+        return
+
+    async with async_session() as session:
+        if await crud.clear_pending(session, event.chat.id, event.new_chat_member.user.id):
+            await session.commit()
+
+
 @router.message(Command("register"), F.chat.type.in_({"group", "supergroup"}))
 async def cmd_register(message: Message) -> None:
     async with async_session() as session:

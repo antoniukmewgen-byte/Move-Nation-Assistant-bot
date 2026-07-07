@@ -72,11 +72,63 @@ async def create_group_record(
     return group
 
 
-async def add_member_tag(session: AsyncSession, group_id: int, user_id: int, tag: str) -> GroupMember:
-    member = GroupMember(group_id=group_id, user_id=user_id, tag=tag)
+async def add_member_tag(
+    session: AsyncSession, group_id: int, user_id: int, tag: str, *, pending: bool = False
+) -> GroupMember:
+    """Додає тег учаснику групи, толерантно до повторної відправки того самого тега.
+
+    `group_members` має `UniqueConstraint(group_id, user_id, tag)` (див.
+    app/db/models.py), тож повторний виклик з тим самим (group_id, user_id, tag) —
+    наприклад, подвійний тап "додати клієнта" в Mini App, або retry після
+    таймауту мережі — раніше падав з `IntegrityError: UNIQUE constraint
+    failed`. Той самий підхід, що й у create_group_record вище: хто встиг
+    вставити рядок першим — виграє, повторний виклик отримує вже існуючий
+    рядок замість помилки. Якщо повтор приніс інше значення `pending` (напр.
+    клієнта спершу довелось запросити лінком, а за другим разом вдалось
+    додати напряму), оновлюємо його на існуючому рядку.
+    """
+    member = GroupMember(group_id=group_id, user_id=user_id, tag=tag, pending=pending)
     session.add(member)
-    await session.flush()
+    try:
+        await session.flush()
+    except IntegrityError:
+        await session.rollback()
+        result = await session.execute(
+            select(GroupMember).where(
+                GroupMember.group_id == group_id, GroupMember.user_id == user_id, GroupMember.tag == tag
+            )
+        )
+        existing = result.scalar_one()
+        if existing.pending != pending:
+            existing.pending = pending
+            await session.flush()
+        return existing
     return member
+
+
+async def clear_pending(session: AsyncSession, group_id: int, user_id: int) -> bool:
+    """Знімає прапорець pending, коли клієнт дійсно приєднався за пересланим лінком.
+
+    add_member_tag (вище) ставить pending=True, коли пряме додавання клієнта
+    не вдалось через приватність і йому лишилось надіслати лінк-запрошення
+    (app/services/group_service.py::add_client) — до фактичного приєднання
+    Mini App інакше показував би його як уже повноцінного учасника групи.
+    Викликається з app/bot/handlers/messages.py::on_member_joined_group, коли
+    Telegram підтверджує вступ. Повертає False, якщо для цього (group_id,
+    user_id) не було жодного pending-рядка (типово — не клієнт, а штатний
+    співробітник, чи клієнт, доданий напряму без pending).
+    """
+    result = await session.execute(
+        select(GroupMember).where(
+            GroupMember.group_id == group_id, GroupMember.user_id == user_id, GroupMember.pending.is_(True)
+        )
+    )
+    member = result.scalar_one_or_none()
+    if member is None:
+        return False
+    member.pending = False
+    await session.flush()
+    return True
 
 
 async def remove_member(session: AsyncSession, group_id: int, user_id: int) -> bool:
