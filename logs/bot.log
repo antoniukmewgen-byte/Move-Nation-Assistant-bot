@@ -17,3 +17,8 @@
 2026-07-08 19:26:34,453 | WARNING  | aiogram.dispatcher | Sleep for 1.000000 seconds and try again... (tryings = 0, bot id = 8979568031)
 2026-07-08 19:26:34,455 | INFO     | aiogram.dispatcher | Polling stopped for bot @MoveNation_Assistant_bot id=8979568031 - 'Move Nation Assistant'
 2026-07-08 19:26:34,456 | INFO     | __main__ | Зупинено користувачем.
+2026-07-08 19:52:05,866 | INFO     | aiogram.dispatcher | Start polling
+2026-07-08 19:52:05,988 | INFO     | aiogram.dispatcher | Run polling for bot @MoveNation_Assistant_bot id=8979568031 - 'Move Nation Assistant'
+2026-07-08 19:52:29,269 | INFO     | app.services.telethon_auth | Код надіслано для user_id=8422370073: type=SentCodeTypeApp next_type=None timeout=None
+2026-07-08 19:54:52,878 | INFO     | app.services.group_service | Не можу встановити тег «Керівник» для user_id=8676009145 у групі -1003805068290 — це власник чату, Telegram дозволяє тегувати творця лише йому самому
+2026-07-08 19:56:45,068 | INFO     | app.services.group_service | Не можу встановити тег «Керівник» для user_id=8676009145 у групі -1003786546899 — це власник чату, Telegram дозволяє тегувати творця лише йому самому

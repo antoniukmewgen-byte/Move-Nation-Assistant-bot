@@ -1,6 +1,6 @@
 """Tests for group-chat handlers (app/bot/handlers/messages.py):
-bot-added-to-group registration, `/register`, `/tag`, and the passive
-awaiting-response tracker on every non-command group message.
+bot-added-to-group registration, `/sync`, and the passive awaiting-response
+tracker on every non-command group message.
 """
 
 from datetime import datetime, timedelta
@@ -9,10 +9,11 @@ from typing import Any
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from telethon.errors import FloodWaitError
 
 from app.bot.handlers import messages as messages_handlers
 from app.db import crud
-from app.db.models import Base, GroupStatus, Role
+from app.db.models import Base, Role
 from app.services import group_service
 from tests.bot_fakes import FakeChat, FakeMessage, FakeUser
 
@@ -285,88 +286,123 @@ async def test_on_member_left_group_is_a_noop_for_an_untracked_member(_patch_db)
         assert await crud.get_group_members(session, 100) == []
 
 
-# --- /register ----------------------------------------------------------------
+# --- /sync -----------------------------------------------------------------
 
 
-async def test_cmd_register_creates_new_group(_patch_db) -> None:
-    message = FakeMessage(chat=FakeChat(id=100, type="group", title="Team Chat"), from_user=FakeUser(id=1))
-
-    await messages_handlers.cmd_register(message)
-
+async def test_cmd_sync_rejects_a_user_with_no_role(_patch_db) -> None:
     async with _patch_db() as session:
-        group = await crud.get_group(session, 100)
-        assert group is not None
-        assert group.status == GroupStatus.ACTIVE
-    assert "зареєстровано" in message.answers[0]
-
-
-async def test_cmd_register_reactivates_existing_group(_patch_db) -> None:
-    async with _patch_db() as session:
-        group = await crud.create_group_record(session, 100, "Team Chat", created_by_userbot=False)
-        group.status = GroupStatus.PENDING_SETUP
+        await crud.get_or_create_user(session, 1, "alice", "Alice A.")
         await session.commit()
 
     message = FakeMessage(chat=FakeChat(id=100, type="group"), from_user=FakeUser(id=1))
 
-    await messages_handlers.cmd_register(message)
+    await messages_handlers.cmd_sync(message)
 
+    assert "лише співробітник" in message.answers[-1]
+
+
+async def test_cmd_sync_rejects_an_unknown_user(_patch_db) -> None:
+    message = FakeMessage(chat=FakeChat(id=100, type="group"), from_user=FakeUser(id=999))
+
+    await messages_handlers.cmd_sync(message)
+
+    assert "лише співробітник" in message.answers[-1]
+
+
+async def test_cmd_sync_reports_not_connected(_patch_db, monkeypatch: pytest.MonkeyPatch) -> None:
     async with _patch_db() as session:
-        group = await crud.get_group(session, 100)
-        assert group is not None
-        assert group.status == GroupStatus.ACTIVE
+        await crud.get_or_create_user(session, 1, "alice", "Alice A.")
+        await crud.set_user_role(session, 1, Role.MANAGER)
+        await session.commit()
+
+    async def fake_sync_group(*_args, **_kwargs):
+        raise group_service.NotConnectedError()
+
+    monkeypatch.setattr(messages_handlers.group_service, "sync_group", fake_sync_group)
+
+    message = FakeMessage(chat=FakeChat(id=100, type="group", title="Team Chat"), from_user=FakeUser(id=1))
+
+    await messages_handlers.cmd_sync(message)
+
+    assert "/connect" in message.answers[-1]
 
 
-# --- /tag -----------------------------------------------------------------
-
-
-async def test_cmd_tag_requires_a_reply(_patch_db) -> None:
-    message = FakeMessage(chat=FakeChat(id=100, type="group"), from_user=FakeUser(id=1), text="/tag Менеджер")
-
-    await messages_handlers.cmd_tag(message)
-
-    assert "у відповідь" in message.answers[0]
-
-
-async def test_cmd_tag_requires_a_tag_value(_patch_db) -> None:
-    target_message = FakeMessage(chat=FakeChat(id=100, type="group"), from_user=FakeUser(id=2))
-    message = FakeMessage(
-        chat=FakeChat(id=100, type="group"),
-        from_user=FakeUser(id=1),
-        text="/tag",
-        reply_to_message=target_message,
-    )
-
-    await messages_handlers.cmd_tag(message)
-
-    assert "Вкажи тег" in message.answers[0]
-
-
-async def test_cmd_tag_tags_the_replied_to_user(_patch_db, monkeypatch: pytest.MonkeyPatch) -> None:
-    # sync_tag_to_telegram (app/services/group_service.py) talks to the real
-    # Telegram Bot API through the module-level `bot` singleton — stub it out
-    # the same way _kick_via_assistant_bot is stubbed in test_members_routes.py.
-    async def fake_sync_tag_to_telegram(chat_id: int, user_id: int, tag: str) -> None:
-        return None
-
-    monkeypatch.setattr(messages_handlers.group_service, "sync_tag_to_telegram", fake_sync_tag_to_telegram)
-
-    target_message = FakeMessage(
-        chat=FakeChat(id=100, type="group"), from_user=FakeUser(id=2, full_name="Bob B.")
-    )
-    message = FakeMessage(
-        chat=FakeChat(id=100, type="group"),
-        from_user=FakeUser(id=1),
-        text="/tag Тімлід",
-        reply_to_message=target_message,
-    )
-
-    await messages_handlers.cmd_tag(message)
-
+async def test_cmd_sync_reports_flood_wait(_patch_db, monkeypatch: pytest.MonkeyPatch) -> None:
     async with _patch_db() as session:
-        members = await crud.get_group_members(session, 100)
-        assert [(m.user_id, m.tag) for m in members] == [(2, "Тімлід")]
-    assert "Bob B." in message.answers[0]
-    assert "Тімлід" in message.answers[0]
+        await crud.get_or_create_user(session, 1, "alice", "Alice A.")
+        await crud.set_user_role(session, 1, Role.MANAGER)
+        await session.commit()
+
+    async def fake_sync_group(*_args, **_kwargs):
+        raise FloodWaitError(request=None, capture=20)
+
+    monkeypatch.setattr(messages_handlers.group_service, "sync_group", fake_sync_group)
+
+    message = FakeMessage(chat=FakeChat(id=100, type="group", title="Team Chat"), from_user=FakeUser(id=1))
+
+    await messages_handlers.cmd_sync(message)
+
+    assert "Забагато запитів" in message.answers[-1]
+
+
+async def test_cmd_sync_reports_generic_failure(_patch_db, monkeypatch: pytest.MonkeyPatch) -> None:
+    async with _patch_db() as session:
+        await crud.get_or_create_user(session, 1, "alice", "Alice A.")
+        await crud.set_user_role(session, 1, Role.MANAGER)
+        await session.commit()
+
+    async def fake_sync_group(*_args, **_kwargs):
+        raise group_service.GroupSyncFailedError()
+
+    monkeypatch.setattr(messages_handlers.group_service, "sync_group", fake_sync_group)
+
+    message = FakeMessage(chat=FakeChat(id=100, type="group", title="Team Chat"), from_user=FakeUser(id=1))
+
+    await messages_handlers.cmd_sync(message)
+
+    assert "Не вдалося просканувати" in message.answers[-1]
+
+
+async def test_cmd_sync_reports_no_changes(_patch_db, monkeypatch: pytest.MonkeyPatch) -> None:
+    async with _patch_db() as session:
+        await crud.get_or_create_user(session, 1, "alice", "Alice A.")
+        await crud.set_user_role(session, 1, Role.MANAGER)
+        await session.commit()
+
+    async def fake_sync_group(*_args, **_kwargs):
+        return 0, 0
+
+    monkeypatch.setattr(messages_handlers.group_service, "sync_group", fake_sync_group)
+
+    message = FakeMessage(chat=FakeChat(id=100, type="group", title="Team Chat"), from_user=FakeUser(id=1))
+
+    await messages_handlers.cmd_sync(message)
+
+    assert "актуально" in message.answers[-1]
+
+
+async def test_cmd_sync_reports_updated_and_removed_counts(_patch_db, monkeypatch: pytest.MonkeyPatch) -> None:
+    async with _patch_db() as session:
+        await crud.get_or_create_user(session, 1, "alice", "Alice A.")
+        await crud.set_user_role(session, 1, Role.MANAGER)
+        await session.commit()
+
+    captured: dict[str, Any] = {}
+
+    async def fake_sync_group(actor_user_id: int, group_id: int, title: str):
+        captured["args"] = (actor_user_id, group_id, title)
+        return 3, 2
+
+    monkeypatch.setattr(messages_handlers.group_service, "sync_group", fake_sync_group)
+
+    message = FakeMessage(chat=FakeChat(id=100, type="group", title="Team Chat"), from_user=FakeUser(id=1))
+
+    await messages_handlers.cmd_sync(message)
+
+    assert captured["args"] == (1, 100, "Team Chat")
+    last_answer = message.answers[-1]
+    assert "оновлено тегів: 3" in last_answer
+    assert "прибрано з групи: 2" in last_answer
 
 
 # --- passive tracker --------------------------------------------------------

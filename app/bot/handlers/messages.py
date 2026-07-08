@@ -6,11 +6,12 @@ from aiogram.exceptions import TelegramBadRequest, TelegramMigrateToChat
 from aiogram.filters import Command
 from aiogram.filters.chat_member_updated import JOIN_TRANSITION, LEAVE_TRANSITION, ChatMemberUpdatedFilter
 from aiogram.types import ChatMemberUpdated, Message
+from telethon.errors import FloodWaitError
 
-from app.bot.guards import require_text, require_user
+from app.bot.guards import require_user
 from app.config import settings
 from app.db import crud
-from app.db.models import GroupStatus
+from app.db.models import User
 from app.db.session import async_session
 from app.services import group_service, reminders
 from app.services.group_creation_registry import is_pending
@@ -55,7 +56,8 @@ async def on_bot_added_to_group(event: ChatMemberUpdated) -> None:
                 await bot.send_message(
                     event.chat.id,
                     "Я підключився до цієї групи. Щоб я міг стежити за повідомленнями клієнтів, "
-                    "признач мене адміністратором і познач учасників тегами через /register та /tag.",
+                    "признач мене адміністратором і виконай команду /sync — вона сама позначить "
+                    "усіх учасників тегами.",
                 )
             except TelegramMigrateToChat:
                 # This chat_id belonged to a basic group that got migrated to a
@@ -165,47 +167,49 @@ async def on_member_left_group(event: ChatMemberUpdated) -> None:
             await session.commit()
 
 
-@router.message(Command("register"), F.chat.type.in_({"group", "supergroup"}))
-async def cmd_register(message: Message) -> None:
+@router.message(Command("sync"), F.chat.type.in_({"group", "supergroup"}))
+async def cmd_sync(message: Message) -> None:
+    """Повна звірка складу групи — замінює колишні /register + /tag.
+
+    Доступна лише співробітнику з призначеною посадою (звичайний клієнт чи
+    ще не оформлений співробітник не повинен мати змоги перетегувати чужу
+    групу). Сканує ПОВНИЙ список учасників через MTProto-сесію того, хто
+    викликав команду (Bot API бачить лише адмінів), і для кожного виставляє
+    актуальний тег — його роль із БД або CLIENT_TAG, якщо ролі нема — а тих,
+    кого скан більше не бачить, прибирає з групи в нашій БД (див.
+    app/services/group_service.py::sync_group).
+    """
+    actor = require_user(message)
     async with async_session() as session:
-        group = await crud.get_group(session, message.chat.id)
-        if group is None:
-            await crud.create_group_record(
-                session, message.chat.id, message.chat.title or "Без назви", created_by_userbot=False
-            )
-        else:
-            group.status = GroupStatus.ACTIVE
-        await session.commit()
+        db_user = await session.get(User, actor.id)
+        if db_user is None or db_user.role is None:
+            await message.answer("Цю команду може використати лише співробітник із призначеною посадою.")
+            return
 
-    await message.answer(
-        "Групу зареєстровано. Познач учасників тегами командою /tag "
-        "у відповідь на повідомлення учасника, наприклад: /tag Менеджер"
-    )
+    await message.answer("Сканую учасників групи…")
 
-
-@router.message(Command("tag"), F.chat.type.in_({"group", "supergroup"}))
-async def cmd_tag(message: Message) -> None:
-    if not message.reply_to_message:
-        await message.answer(
-            "Використовуй цю команду у відповідь на повідомлення учасника, якого хочеш позначити."
-        )
+    try:
+        updated, removed = await group_service.sync_group(actor.id, message.chat.id, message.chat.title or "Без назви")
+    except group_service.NotConnectedError:
+        await message.answer("Спочатку підключи свій Telegram-акаунт: /connect")
+        return
+    except FloodWaitError as exc:
+        await message.answer(f"Забагато запитів до Telegram, спробуй через {exc.seconds} с.")
+        return
+    except group_service.GroupSyncFailedError:
+        await message.answer("Не вдалося просканувати учасників групи. Спробуй ще раз пізніше.")
         return
 
-    text = require_text(message)
-    parts = text.split(maxsplit=1)
-    if len(parts) < 2:
-        await message.answer("Вкажи тег, наприклад: /tag Менеджер")
+    if not updated and not removed:
+        await message.answer("Усе вже актуально, змін не було.")
         return
-    tag_value = parts[1].strip()
 
-    target = require_user(message.reply_to_message)
-    async with async_session() as session:
-        await crud.get_or_create_user(session, target.id, target.username, target.full_name)
-        await crud.add_member_tag(session, message.chat.id, target.id, tag_value)
-        await session.commit()
-
-    await group_service.sync_tag_to_telegram(message.chat.id, target.id, tag_value)
-    await message.answer(f"{target.full_name} позначено тегом «{tag_value}».")
+    parts = []
+    if updated:
+        parts.append(f"оновлено тегів: {updated}")
+    if removed:
+        parts.append(f"прибрано з групи: {removed}")
+    await message.answer("Готово, " + ", ".join(parts) + ".")
 
 
 @router.message(F.chat.type.in_({"group", "supergroup"}), F.text, ~F.text.startswith("/"))

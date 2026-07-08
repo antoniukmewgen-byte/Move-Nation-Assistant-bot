@@ -13,7 +13,7 @@ async def cmd_team(message: Message) -> None:
     async with async_session() as session:
         group = await crud.get_group(session, message.chat.id)
         if group is None:
-            await message.answer("Ця група ще не зареєстрована в системі. Використай /register.")
+            await message.answer("Ця група ще не зареєстрована в системі. Використай /sync.")
             return
         members = await crud.get_group_members(session, message.chat.id)
 

@@ -28,7 +28,7 @@ from app.db.models import CLIENT_TAG, Group, User
 from app.db.session import async_session
 from app.services.crypto import decrypt_session
 from app.services.group_creation_registry import mark_pending, unmark_pending
-from app.userbot.actions import add_client_to_group, create_group_with_team
+from app.userbot.actions import add_client_to_group, create_group_with_team, scan_group_members
 
 logger = logging.getLogger(__name__)
 
@@ -122,6 +122,10 @@ class AddClientFailedError(GroupServiceError):
 
 class StaffNotFoundError(GroupServiceError):
     """No user row exists for the given user_id — nothing to offboard."""
+
+
+class GroupSyncFailedError(GroupServiceError):
+    """Wraps an unexpected (already-logged) failure from the Telegram-side membership scan."""
 
 
 async def create_group(user_id: int, title: str) -> Group:
@@ -283,3 +287,69 @@ async def offboard_staff(user_id: int) -> int:
         raise StaffNotFoundError()
 
     return len(groups)
+
+
+async def sync_group(actor_user_id: int, group_id: int, title: str) -> tuple[int, int]:
+    """Повна звірка складу групи від імені `actor_user_id`, замінює /register+/tag.
+
+    Bot API бачить лише адмінів, тож для повного списку учасників доводиться
+    йти через MTProto-сесію самого співробітника, який запустив /sync (див.
+    app/userbot/actions.py::scan_group_members). За результатом скану:
+
+    - група реєструється в нашій БД, якщо ще не була (`created_by_userbot=False`,
+      бо цей чат міг бути створений будь-як, задовго до підключення бота);
+    - кожному знайденому учаснику виставляється "офіційний" тег — його
+      поточна роль із БД, або CLIENT_TAG, якщо ролі нема (`crud.set_member_tag`,
+      звірка/replace — Варіант А: перезаписує застарілий тег на актуальний,
+      але ніколи не чіпає довільні кастомні теги, додані окремо через /tag чи
+      Mini App);
+    - кожен, кого скан більше не бачить серед учасників, повністю прибирається
+      з group_members (і з БД, якщо це був єдиний запис про людину — Варіант А,
+      повна звірка, на відміну від on_member_left_group, який стосується лише
+      миттєвого виходу/кіку одного учасника).
+
+    Повертає ``(updated_count, removed_count)``. Лишає FloodWaitError
+    поширюватись як є (той самий підхід, що й create_group/add_client), і
+    кидає :class:`GroupSyncFailedError` для решти несподіваних збоїв
+    спілкування з Telegram.
+    """
+    async with async_session() as session:
+        encrypted_session = await crud.get_user_session(session, actor_user_id)
+        if encrypted_session is None:
+            raise NotConnectedError()
+
+    try:
+        participants = await scan_group_members(decrypt_session(encrypted_session), group_id)
+    except FloodWaitError:
+        raise
+    except Exception as exc:
+        logger.exception("Не вдалося просканувати учасників групи %s від імені user_id=%s", group_id, actor_user_id)
+        raise GroupSyncFailedError() from exc
+
+    scanned_ids = {user_id for user_id, _username, _full_name, is_bot in participants if not is_bot}
+    changed_tags: list[tuple[int, str]] = []
+    removed_ids: list[int] = []
+
+    async with async_session() as session:
+        await crud.create_group_record(session, group_id, title, created_by_userbot=False)
+        current_members = await crud.get_group_members(session, group_id)
+        current_user_ids = {member.user_id for member in current_members}
+
+        for user_id, username, full_name, is_bot in participants:
+            if is_bot:
+                continue
+            db_user = await crud.get_or_create_user(session, user_id, username, full_name)
+            desired_tag = db_user.role.value if db_user.role else CLIENT_TAG
+            if await crud.set_member_tag(session, group_id, user_id, desired_tag):
+                changed_tags.append((user_id, desired_tag))
+
+        for user_id in current_user_ids - scanned_ids:
+            if await crud.remove_member(session, group_id, user_id):
+                removed_ids.append(user_id)
+
+        await session.commit()
+
+    for user_id, tag in changed_tags:
+        await sync_tag_to_telegram(group_id, user_id, tag)
+
+    return len(changed_tags), len(removed_ids)

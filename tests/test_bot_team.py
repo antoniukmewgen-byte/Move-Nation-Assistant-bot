@@ -22,12 +22,12 @@ async def _patch_db(monkeypatch: pytest.MonkeyPatch):
     await engine.dispose()
 
 
-async def test_cmd_team_unregistered_group_prompts_register(_patch_db) -> None:
+async def test_cmd_team_unregistered_group_prompts_sync(_patch_db) -> None:
     message = FakeMessage(chat=FakeChat(id=100, type="group"), from_user=FakeUser(id=1))
 
     await team_handlers.cmd_team(message)
 
-    assert "/register" in message.answers[0]
+    assert "/sync" in message.answers[0]
 
 
 async def test_cmd_team_no_tagged_members(_patch_db) -> None:

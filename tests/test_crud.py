@@ -77,6 +77,29 @@ async def test_sync_role_to_group_tags_is_a_noop_when_the_tag_already_matches(
     assert updated_group_ids == []
 
 
+async def test_sync_role_to_group_tags_collapses_two_role_tags_in_one_group_without_integrity_error(
+    db_session: AsyncSession,
+) -> None:
+    # Regression test: a person can hold two distinct staff-role tags in the
+    # same group at once (e.g. "Менеджер" + "Тімлід" — see the UniqueConstraint
+    # comment in app/db/models.py and test_group_membership_and_client_tagging
+    # for the general multi-tag capability). Before the group-by-group_id fix,
+    # setting `member.tag = role.value` on each row independently would leave
+    # two rows with the identical new tag, violating the UniqueConstraint and
+    # raising IntegrityError on flush.
+    await crud.create_group_record(db_session, group_id=100, title="Group A", created_by_userbot=True)
+    await crud.get_or_create_user(db_session, 1, "bob", "Bob B.")
+    await crud.add_member_tag(db_session, 100, 1, Role.MANAGER.value)
+    await crud.add_member_tag(db_session, 100, 1, Role.TEAMLEAD.value)
+    await db_session.flush()
+
+    updated_group_ids = await crud.sync_role_to_group_tags(db_session, 1, Role.SEO)
+
+    assert updated_group_ids == [100]
+    members = await crud.get_group_members(db_session, 100)
+    assert [m.tag for m in members] == [Role.SEO.value]
+
+
 async def test_session_string_round_trip(db_session: AsyncSession) -> None:
     await crud.get_or_create_user(db_session, 1, "alice", "Alice")
     assert await crud.get_user_session(db_session, 1) is None
@@ -153,6 +176,27 @@ async def test_remove_member_keeps_the_user_row_if_still_a_member_elsewhere(
     assert await db_session.get(User, 2) is not None
 
 
+async def test_remove_member_removes_every_tag_row_for_that_person_in_the_group(
+    db_session: AsyncSession,
+) -> None:
+    # Regression test: a person can hold multiple distinct tag rows in the
+    # same group at once (see test_sync_role_to_group_tags_collapses_two_role_
+    # tags_in_one_group_without_integrity_error above) — kicking them out of
+    # the chat concerns the whole person, not just one of their tags, and
+    # the old scalar_one_or_none()-based lookup would raise
+    # MultipleResultsFound in this scenario.
+    await crud.create_group_record(db_session, group_id=100, title="Group A", created_by_userbot=True)
+    await crud.get_or_create_user(db_session, 1, "bob", "Bob B.")
+    await crud.add_member_tag(db_session, 100, 1, Role.MANAGER.value)
+    await crud.add_member_tag(db_session, 100, 1, "Custom Tag")
+    await db_session.flush()
+
+    removed = await crud.remove_member(db_session, 100, 1)
+
+    assert removed is True
+    assert await crud.get_group_members(db_session, 100) == []
+
+
 async def test_remove_member_never_deletes_a_staff_member_even_without_remaining_groups(
     db_session: AsyncSession,
 ) -> None:
@@ -216,6 +260,90 @@ async def test_notify_recipients_are_scoped_to_group_and_role(db_session: AsyncS
 
     recipients_b = await crud.get_notify_recipients(db_session, 200)
     assert {u.id for u in recipients_b} == {3}
+
+
+async def test_set_member_tag_creates_a_new_slot_row_and_reports_a_change(db_session: AsyncSession) -> None:
+    await crud.create_group_record(db_session, group_id=100, title="Group A", created_by_userbot=True)
+    await crud.get_or_create_user(db_session, 1, "bob", "Bob B.")
+
+    changed = await crud.set_member_tag(db_session, 100, 1, Role.MANAGER.value)
+
+    assert changed is True
+    members = await crud.get_group_members(db_session, 100)
+    assert [m.tag for m in members] == [Role.MANAGER.value]
+
+
+async def test_set_member_tag_is_idempotent_when_the_tag_already_matches(db_session: AsyncSession) -> None:
+    await crud.create_group_record(db_session, group_id=100, title="Group A", created_by_userbot=True)
+    await crud.get_or_create_user(db_session, 1, "bob", "Bob B.")
+    await crud.add_member_tag(db_session, 100, 1, Role.MANAGER.value)
+    await db_session.flush()
+
+    changed = await crud.set_member_tag(db_session, 100, 1, Role.MANAGER.value)
+
+    assert changed is False
+    members = await crud.get_group_members(db_session, 100)
+    assert [m.tag for m in members] == [Role.MANAGER.value]
+
+
+async def test_set_member_tag_replaces_a_stale_role_slot_tag(db_session: AsyncSession) -> None:
+    await crud.create_group_record(db_session, group_id=100, title="Group A", created_by_userbot=True)
+    await crud.get_or_create_user(db_session, 1, "bob", "Bob B.")
+    await crud.add_member_tag(db_session, 100, 1, Role.MANAGER.value)
+    await db_session.flush()
+
+    changed = await crud.set_member_tag(db_session, 100, 1, Role.TEAMLEAD.value)
+
+    assert changed is True
+    members = await crud.get_group_members(db_session, 100)
+    assert [m.tag for m in members] == [Role.TEAMLEAD.value]
+
+
+async def test_set_member_tag_collapses_two_role_slot_rows_into_one(db_session: AsyncSession) -> None:
+    # Same multi-tag scenario as sync_role_to_group_tags above — set_member_tag
+    # must land on exactly one canonical role/CLIENT_TAG row, not error out or
+    # leave duplicates.
+    await crud.create_group_record(db_session, group_id=100, title="Group A", created_by_userbot=True)
+    await crud.get_or_create_user(db_session, 1, "bob", "Bob B.")
+    await crud.add_member_tag(db_session, 100, 1, Role.MANAGER.value)
+    await crud.add_member_tag(db_session, 100, 1, Role.TEAMLEAD.value)
+    await db_session.flush()
+
+    changed = await crud.set_member_tag(db_session, 100, 1, CLIENT_TAG)
+
+    assert changed is True
+    members = await crud.get_group_members(db_session, 100)
+    assert [m.tag for m in members] == [CLIENT_TAG]
+
+
+async def test_set_member_tag_clears_pending_without_changing_the_tag(db_session: AsyncSession) -> None:
+    await crud.create_group_record(db_session, group_id=100, title="Group A", created_by_userbot=True)
+    await crud.get_or_create_user(db_session, 2, "client", "Client")
+    await crud.add_member_tag(db_session, 100, 2, CLIENT_TAG, pending=True)
+    await db_session.flush()
+
+    changed = await crud.set_member_tag(db_session, 100, 2, CLIENT_TAG)
+
+    assert changed is True
+    members = await crud.get_group_members(db_session, 100)
+    assert members[0].tag == CLIENT_TAG
+    assert members[0].pending is False
+
+
+async def test_set_member_tag_never_touches_arbitrary_custom_tags(db_session: AsyncSession) -> None:
+    # A custom tag (added via /tag or Mini App /members/tag) that doesn't
+    # match any Role value or CLIENT_TAG is outside the "official slot" and
+    # must survive untouched alongside the new role tag.
+    await crud.create_group_record(db_session, group_id=100, title="Group A", created_by_userbot=True)
+    await crud.get_or_create_user(db_session, 1, "bob", "Bob B.")
+    await crud.add_member_tag(db_session, 100, 1, "Custom Tag")
+    await db_session.flush()
+
+    changed = await crud.set_member_tag(db_session, 100, 1, Role.MANAGER.value)
+
+    assert changed is True
+    members = await crud.get_group_members(db_session, 100)
+    assert sorted(m.tag for m in members) == sorted([Role.MANAGER.value, "Custom Tag"])
 
 
 async def test_awaiting_response_lifecycle(db_session: AsyncSession) -> None:

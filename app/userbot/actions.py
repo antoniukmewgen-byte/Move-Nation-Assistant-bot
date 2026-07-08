@@ -175,6 +175,35 @@ async def remove_member_from_group(actor_session: str, group_id: int, user_id: i
         await client.disconnect()
 
 
+async def scan_group_members(actor_session: str, group_id: int) -> list[tuple[int, str | None, str | None, bool]]:
+    """Повертає ПОВНИЙ список учасників групи від імені співробітника, який ініціював /sync.
+
+    Bot API дає лише `getChatAdministrators` — звичайних учасників чату він
+    узагалі не бачить, тож так само, як і create_group_with_team/
+    add_client_to_group вище, єдиний спосіб просканувати кожного —
+    MTProto-сесія самого учасника. Повертає ``(user_id, username, full_name,
+    is_bot)`` для кожного — викликач (`group_service.sync_group`) сам
+    вирішує, кого з них і як тегувати.
+    """
+    client = _client_for(actor_session)
+    await client.connect()
+
+    try:
+        channel = await client.get_entity(group_id)
+        participants = await client.get_participants(channel)
+        return [
+            (
+                p.id,
+                p.username,
+                " ".join(part for part in (p.first_name, p.last_name) if part) or None,
+                bool(p.bot),
+            )
+            for p in participants
+        ]
+    finally:
+        await client.disconnect()
+
+
 async def delete_group(actor_session: str, group_id: int) -> bool:
     """Видаляє супергрупу в Telegram від імені співробітника, який ініціював дію.
 

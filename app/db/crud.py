@@ -45,22 +45,104 @@ async def sync_role_to_group_tags(session: AsyncSession, user_id: int, role: Rol
     (окреме, самостійне членство) — таке відношення зміна власної посади
     зачіпати не повинна.
 
+    Групується по group_id і в кожній групі видаляє/перевстановлює рядки, а
+    не просто перезаписує `tag` на місці: людина в принципі може мати кілька
+    ОКРЕМИХ staff-тегів в одній групі одночасно (наприклад "Менеджер" +
+    "Тімлід" — див. UniqueConstraint у app/db/models.py), і якби кожен такий
+    рядок просто отримав однаковий новий `role.value`, два різні рядки
+    вийшли б з однаковим (group_id, user_id, tag) — `IntegrityError` при
+    flush через той самий UniqueConstraint.
+
     Повертає список `group_id`, у яких тег дійсно змінився — виклик далі
     використовує це, щоб знати, для яких груп ще й дзеркалити зміну в сам
     Telegram через `group_service.sync_tag_to_telegram`.
     """
     role_values = {r.value for r in Role}
-    result = await session.execute(select(GroupMember).where(GroupMember.user_id == user_id))
-    updated_group_ids: list[int] = []
+    result = await session.execute(
+        select(GroupMember).where(GroupMember.user_id == user_id, GroupMember.tag.in_(role_values))
+    )
+    by_group: dict[int, list[GroupMember]] = {}
     for member in result.scalars():
-        if member.tag in role_values and member.tag != role.value:
-            member.tag = role.value
-            updated_group_ids.append(member.group_id)
+        by_group.setdefault(member.group_id, []).append(member)
+
+    updated_group_ids: list[int] = []
+    for group_id, members in by_group.items():
+        matching = next((m for m in members if m.tag == role.value), None)
+        changed = False
+        for member in members:
+            if member is not matching:
+                await session.delete(member)
+                changed = True
+
+        if matching is None:
+            session.add(GroupMember(group_id=group_id, user_id=user_id, tag=role.value, pending=False))
+            changed = True
+
+        if changed:
+            updated_group_ids.append(group_id)
 
     if updated_group_ids:
         await session.flush()
 
     return updated_group_ids
+
+
+async def set_member_tag(session: AsyncSession, group_id: int, user_id: int, tag: str) -> bool:
+    """Виставляє/оновлює РОЛЬОВИЙ (чи CLIENT_TAG) тег учасника в групі — лише цей один "офіційний" слот.
+
+    На відміну від `add_member_tag` вище (яка просто додає ще один рядок,
+    свідомо дозволяючи людині мати кілька ОКРЕМИХ довільних тегів у групі
+    одночасно — див. коментар до UniqueConstraint у app/db/models.py та
+    tests/test_members_routes.py::test_tag_member_adds_a_new_tag_row) — тут
+    зачіпаються лише рядки, чий тег вже є ОДНІЄЮ зі staff-ролей
+    (`{r.value for r in Role}`) або `CLIENT_TAG`: у людини може бути рівно
+    один такий "офіційний" тег одночасно, тож усі ІНШІ рядки саме з цього
+    набору прибираються, а не накопичуються. Будь-який довільний кастомний
+    тег (доданий вручну через /tag чи Mini App `/members/tag` і не рівний
+    жодній staff-ролі й не CLIENT_TAG) це навмисно НЕ чіпає.
+
+    Використовується виключно `group_service.sync_group` (повний
+    MTProto-скан членства через /sync, app/bot/handlers/messages.py) для
+    приведення саме цього офіційного тега у відповідність до поточної ролі
+    людини (`users.role`) чи статусу клієнта.
+
+    Також знімає `pending`, якщо він був виставлений раніше (клієнт,
+    доданий лінком, — див. group_service.add_client) — сканування бачить
+    лише тих, хто вже реально в чаті, тож pending для них більше не
+    актуальний.
+
+    Повертає True, якщо щось справді змінилося (новий учасник, інший тег чи
+    знятий pending), False — якщо все вже було саме так (ідемпотентність,
+    потрібна для безпечного повторного запуску /sync).
+    """
+    slot_values = {r.value for r in Role} | {CLIENT_TAG}
+    result = await session.execute(
+        select(GroupMember).where(
+            GroupMember.group_id == group_id,
+            GroupMember.user_id == user_id,
+            GroupMember.tag.in_(slot_values),
+        )
+    )
+    existing = list(result.scalars())
+    matching = next((m for m in existing if m.tag == tag), None)
+
+    changed = False
+    for member in existing:
+        if member is not matching:
+            await session.delete(member)
+            changed = True
+
+    if matching is None:
+        session.add(GroupMember(group_id=group_id, user_id=user_id, tag=tag, pending=False))
+        changed = True
+    elif matching.pending:
+        matching.pending = False
+        changed = True
+
+    if changed:
+        await session.flush()
+
+    return changed
 
 
 async def set_user_session(session: AsyncSession, user_id: int, encrypted_session: str) -> None:
@@ -187,23 +269,29 @@ async def remove_member(session: AsyncSession, group_id: int, user_id: int) -> b
     app/bot/handlers/messages.py::on_bot_removed_from_group), а не побічний
     ефект видалення з однієї групи.
 
-    Повертає True, якщо рядок `group_members` дійсно існував і був
+    Людина може одночасно мати кілька ОКРЕМИХ тегів у цій самій групі (див.
+    add_member_tag і UniqueConstraint у app/db/models.py) — тут прибираються
+    УСІ її рядки для цієї групи одразу, а не лише перший знайдений: фізичний
+    вихід/кік з чату стосується людини цілком, а не одного конкретного тега.
+
+    Повертає True, якщо хоч один рядок `group_members` дійсно існував і був
     видалений, False — якщо цього user_id вже не було серед учасників групи
     (нема що видаляти, а не помилка — той самий підхід, що й у delete_group).
     """
     result = await session.execute(
         select(GroupMember).where(GroupMember.group_id == group_id, GroupMember.user_id == user_id)
     )
-    member = result.scalar_one_or_none()
-    if member is None:
+    members = list(result.scalars())
+    if not members:
         return False
-    await session.delete(member)
+    for member in members:
+        await session.delete(member)
     await session.flush()
 
     user = await session.get(User, user_id)
     if user is not None and user.role is None:
         remaining = await session.execute(select(GroupMember).where(GroupMember.user_id == user_id))
-        if remaining.scalar_one_or_none() is None:
+        if remaining.scalars().first() is None:
             await session.delete(user)
             await session.flush()
 
