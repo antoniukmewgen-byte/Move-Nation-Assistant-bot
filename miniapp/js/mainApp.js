@@ -104,9 +104,30 @@ function switchTab(name) {
 
 document.getElementById("back-to-groups-btn").addEventListener("click", () => switchTab("groups"));
 
+// A fetch that resolves quickly (the common case, and the whole reason the
+// skeleton was removed) should show nothing in between — no interim state
+// at all. But a *first* load of an empty list with no visible result until
+// the response arrives is bad if the network is genuinely slow: this arms a
+// small spinner after a short delay, so a slow request still gets feedback
+// without a fast one ever flashing it. Skipped entirely when the list
+// already has real rows — a realtime-triggered background refresh (see the
+// `groups_changed`/`members_changed` handlers in enterMainApp()) already has
+// content on screen and must never be interrupted by a spinner replacing it.
+const SLOW_FETCH_SPINNER_DELAY_MS = 400;
+
+function showSpinnerIfSlow(list) {
+  if (list.querySelector(".list-row, .member-row")) return () => {};
+  const timer = setTimeout(() => {
+    list.innerHTML = '<li class="list-loading"><span class="spinner spinner--small"></span></li>';
+  }, SLOW_FETCH_SPINNER_DELAY_MS);
+  return () => clearTimeout(timer);
+}
+
 async function fetchGroups() {
   const list = document.getElementById("groups");
+  const cancelSpinner = showSpinnerIfSlow(list);
   const res = await apiFetch("/groups");
+  cancelSpinner();
   if (!res.ok) {
     list.innerHTML = '<li class="list-empty">Не вдалося завантажити групи.</li>';
     return;
@@ -165,7 +186,9 @@ async function openGroupDetail(groupId, title) {
 
 async function fetchMembers(groupId) {
   const list = document.getElementById("members");
+  const cancelSpinner = showSpinnerIfSlow(list);
   const res = await apiFetch(`/members?group_id=${groupId}`);
+  cancelSpinner();
   if (!res.ok) {
     list.innerHTML = '<li class="list-empty">Не вдалося завантажити учасників.</li>';
     return;

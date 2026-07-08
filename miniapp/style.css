@@ -139,6 +139,12 @@ button.danger:active { background: rgba(255, 82, 82, 0.08); }
 /* generic empty-state row shown while a list is loading or genuinely empty */
 .list-empty { color: var(--muted); font-size: 13px; text-align: center; padding: 10px 0; }
 
+/* small inline spinner row — shown only after a short delay on a first
+   (empty) list load that's taking longer than expected, see mainApp.js's
+   showSpinnerIfSlow(). Reuses .spinner's ring, just smaller. */
+.list-loading { display: flex; justify-content: center; padding: 16px 0; }
+.spinner--small { width: 18px; height: 18px; border-width: 2px; }
+
 /* icon square used for both group-row icons and role-selection avatars —
    same visual language, only the content (svg vs. initials) differs */
 .icon-pill {
