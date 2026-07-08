@@ -17,18 +17,44 @@ so it propagates as-is and each caller catches it directly.
 from __future__ import annotations
 
 import logging
+from html import escape
 
 from aiogram.exceptions import TelegramBadRequest
 from telethon.errors import FloodWaitError
 
 from app.bot.bot_instance import bot
 from app.db import crud
-from app.db.models import CLIENT_TAG, Group
+from app.db.models import CLIENT_TAG, Group, User
 from app.db.session import async_session
 from app.services.crypto import decrypt_session
+from app.services.group_creation_registry import mark_pending, unmark_pending
 from app.userbot.actions import add_client_to_group, create_group_with_team
 
 logger = logging.getLogger(__name__)
+
+
+async def _send_group_welcome_message(chat_id: int, title: str, staff: list[User]) -> None:
+    """Вітальне повідомлення в щойно створеній через застосунок групі.
+
+    На відміну від `on_bot_added_to_group` (app/bot/handlers/messages.py) —
+    того загального "мене додали, признач адміном і затегай /register /tag"
+    тексту — тут усе, про що там просять, уже зроблено самим `create_group`
+    (бот вже адмін, стартовий склад вже затегований), тож повідомлення просто
+    представляє бота і показує, хто вже в групі, замість застарілих інструкцій.
+    Найкращий-варіант і без винятків назовні: сам факт створення групи вже
+    закомічено викликачем, а це повідомлення — лише косметичне вітання.
+    """
+    roster = "\n".join(f"• {escape(user.full_name or user.username or str(user.id))} — {user.role.value}" for user in staff)
+    text = (
+        f"👋 Привіт! Я асистент групи «<b>{escape(title)}</b>».\n"
+        "Буду нагадувати, якщо клієнт довго чекає на відповідь.\n\n"
+        f"Стартовий склад:\n{roster}\n\n"
+        "Усе вже налаштовано — гарної роботи! 🎯"
+    )
+    try:
+        await bot.send_message(chat_id, text)
+    except Exception:
+        logger.exception("Не вдалося надіслати вітальне повідомлення в групу %s", chat_id)
 
 
 async def sync_tag_to_telegram(chat_id: int, user_id: int, tag: str) -> None:
@@ -109,27 +135,47 @@ async def create_group(user_id: int, title: str) -> Group:
         staff = await crud.get_staff_users(session)
         staff_ids = [(u.id, u.username, u.role) for u in staff]
 
+    # `user_id`'s own Telethon session is what performs every Telegram-side
+    # action below (group creation, migration, admin promotion) — Bot API
+    # reports `user_id` as the `from_user` on the resulting `my_chat_member`
+    # updates for the bot (see app/bot/handlers/messages.py::
+    # on_bot_added_to_group). Marking *before* the first network call, rather
+    # than the chat_id only once it's known (the previous approach), closes
+    # the race: Bot API delivers those updates over its own polling loop,
+    # independent of — and not necessarily after — our own MTProto calls
+    # returning, so a chat_id learned "after the fact" could already be too
+    # late. See app/services/group_creation_registry.py for the full story.
+    mark_pending(user_id)
     try:
-        chat_id = await create_group_with_team(decrypt_session(encrypted_session), title, staff_ids)
-    except FloodWaitError:
-        raise
-    except Exception as exc:
-        logger.exception("Не вдалося створити групу «%s» для user_id=%s", title, user_id)
-        raise GroupCreationFailedError() from exc
+        try:
+            chat_id = await create_group_with_team(decrypt_session(encrypted_session), title, staff_ids)
+        except FloodWaitError:
+            raise
+        except Exception as exc:
+            logger.exception("Не вдалося створити групу «%s» для user_id=%s", title, user_id)
+            raise GroupCreationFailedError() from exc
 
-    async with async_session() as session:
-        group = await crud.create_group_record(session, chat_id, title, created_by_userbot=True)
+        async with async_session() as session:
+            group = await crud.create_group_record(session, chat_id, title, created_by_userbot=True)
+            for staff_user_id, _username, role in staff_ids:
+                if role is not None:
+                    await crud.add_member_tag(session, chat_id, staff_user_id, role.value)
+            await session.commit()
+            await session.refresh(group)
+
         for staff_user_id, _username, role in staff_ids:
             if role is not None:
-                await crud.add_member_tag(session, chat_id, staff_user_id, role.value)
-        await session.commit()
-        await session.refresh(group)
+                await sync_tag_to_telegram(chat_id, staff_user_id, role.value)
 
-    for staff_user_id, _username, role in staff_ids:
-        if role is not None:
-            await sync_tag_to_telegram(chat_id, staff_user_id, role.value)
+        await _send_group_welcome_message(chat_id, title, staff)
 
-    return group
+        return group
+    finally:
+        # Stays marked through the DB/tag-sync/welcome-message steps above
+        # too — those are several more awaited round trips, giving the Bot
+        # API polling loop plenty of headroom to have already delivered and
+        # processed both `my_chat_member` updates by the time we unmark.
+        unmark_pending(user_id)
 
 
 async def add_client(user_id: int, group_id: int, identifier: str) -> tuple[int, str | None]:

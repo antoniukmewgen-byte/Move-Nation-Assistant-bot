@@ -12,21 +12,36 @@ from app.db import crud
 from app.db.models import GroupStatus
 from app.db.session import async_session
 from app.services import group_service, reminders
+from app.services.group_creation_registry import is_pending
 
 router = Router()
 
 
 @router.my_chat_member(ChatMemberUpdatedFilter(member_status_changed=JOIN_TRANSITION))
 async def on_bot_added_to_group(event: ChatMemberUpdated) -> None:
-    # JOIN_TRANSITION (not-a-member -> member) fires only when the bot
-    # actually joins the chat. aiogram's IS_MEMBER, by contrast, matches
-    # any update where the *new* status is member-like — including the
-    # member -> administrator promotion our own userbot flow triggers
-    # right after creating a group (see
-    # app/userbot/actions.py::_promote_assistant_bot). Filtering on
-    # IS_MEMBER made that promotion re-trigger this handler and send the
-    # welcome message a second time.
+    # JOIN_TRANSITION matches any "not a member -> member-like" change, which
+    # includes not just genuine external joins but also the member ->
+    # administrator promotion our own userbot flow triggers right after
+    # creating a group (app/userbot/actions.py::_promote_assistant_bot) — to
+    # the Bot API, that promotion is the *first* status change it's ever seen
+    # for the post-migration chat_id, so its "old" status defaults to left,
+    # matching this same filter. The is_pending() check right below is what
+    # actually filters that (and the pre-migration chat_id's own join) out —
+    # see app/services/group_creation_registry.py.
     if event.chat.type not in ("group", "supergroup"):
+        return
+
+    if is_pending(event.from_user.id):
+        # Це не зовнішнє додавання бота, а власний флоу створення групи
+        # (app/services/group_service.py::create_group,
+        # app/userbot/actions.py::create_group_with_team) — виконується
+        # Telethon-сесією саме цього співробітника, тож Bot API репортує
+        # його ж user_id як `from_user` і для "join" базової групи, і для
+        # промоуту в адміни в супергрупі після міграції. Обидві ці події —
+        # не зовнішнє додавання бота, а group_service.create_group однаково
+        # створить авторитетний запис групи в БД і своє власне вітання
+        # одразу після завершення цього флоу (див.
+        # app/services/group_creation_registry.py).
         return
 
     async with async_session() as session:

@@ -82,7 +82,9 @@ async def test_on_bot_added_to_group_ignores_private_chats(_patch_db) -> None:
 
 async def test_on_bot_added_to_group_registers_new_group_and_greets(_patch_db) -> None:
     bot = FakeBot()
-    event = SimpleNamespace(chat=FakeChat(id=100, type="group", title="Team Chat"), bot=bot)
+    event = SimpleNamespace(
+        chat=FakeChat(id=100, type="group", title="Team Chat"), bot=bot, from_user=SimpleNamespace(id=1)
+    )
 
     await messages_handlers.on_bot_added_to_group(event)
 
@@ -95,13 +97,38 @@ async def test_on_bot_added_to_group_registers_new_group_and_greets(_patch_db) -
     assert bot.sent[0][0] == 100
 
 
+async def test_on_bot_added_to_group_skips_actors_pending_our_own_group_creation(
+    _patch_db, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Both the pre- and post-migration "bot added" events for a group we're
+    # creating ourselves (app/services/group_service.py::create_group) look
+    # like a genuine external join to aiogram's JOIN_TRANSITION filter, and
+    # both carry the acting staff member's user_id as `from_user` (it's their
+    # own Telethon session performing every step) — this is the registry-based
+    # fix for that duplicate-welcome-message bug.
+    monkeypatch.setattr(messages_handlers, "is_pending", lambda actor_user_id: True)
+
+    bot = FakeBot()
+    event = SimpleNamespace(
+        chat=FakeChat(id=100, type="supergroup", title="Team Chat"), bot=bot, from_user=SimpleNamespace(id=42)
+    )
+
+    await messages_handlers.on_bot_added_to_group(event)
+
+    assert bot.sent == []
+    async with _patch_db() as session:
+        assert await crud.get_group(session, 100) is None
+
+
 async def test_on_bot_added_to_group_is_a_noop_for_already_registered_group(_patch_db) -> None:
     async with _patch_db() as session:
         await crud.create_group_record(session, 100, "Team Chat", created_by_userbot=False)
         await session.commit()
 
     bot = FakeBot()
-    event = SimpleNamespace(chat=FakeChat(id=100, type="group", title="Team Chat"), bot=bot)
+    event = SimpleNamespace(
+        chat=FakeChat(id=100, type="group", title="Team Chat"), bot=bot, from_user=SimpleNamespace(id=1)
+    )
 
     await messages_handlers.on_bot_added_to_group(event)
 
