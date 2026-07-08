@@ -38,16 +38,18 @@ logger = logging.getLogger(__name__)
 
 ASSISTANT_ADMIN_RIGHTS = ChatAdminRights(
     change_info=True,
-    post_messages=False,
-    edit_messages=False,
+    post_messages=True,
+    edit_messages=True,
     delete_messages=True,
     ban_users=True,
     invite_users=True,
     pin_messages=True,
-    add_admins=False,
+    add_admins=True,
     anonymous=False,
-    manage_call=False,
+    manage_call=True,
     other=True,
+    manage_topics=True,
+    manage_ranks=True,
 )
 
 
