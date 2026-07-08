@@ -39,15 +39,6 @@ export function nameInitials(fullName, username) {
   return words.length > 1 ? (words[0][0] + words[1][0]).toUpperCase() : source.slice(0, 2).toUpperCase();
 }
 
-// Shimmer placeholder rows shown while a list's first fetch is in flight —
-// see `.skeleton-row` in style.css for the shimmer animation itself.
-export function skeletonListItems(count = 3) {
-  return Array.from(
-    { length: count },
-    () => '<li class="skeleton-row"><span class="skeleton-avatar"></span><span class="skeleton-line"></span></li>'
-  ).join("");
-}
-
 export function escapeHtml(value) {
   const div = document.createElement("div");
   div.textContent = value;

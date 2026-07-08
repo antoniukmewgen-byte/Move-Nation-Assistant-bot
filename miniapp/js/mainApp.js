@@ -1,13 +1,6 @@
 import { apiFetch, safeJson } from "./api.js";
 import { showStep } from "./navigation.js";
-import {
-  CHEVRON_SVG,
-  GROUP_ICON_SVG,
-  TRASH_ICON_SVG,
-  escapeHtml,
-  nameInitials,
-  skeletonListItems,
-} from "./render.js";
+import { CHEVRON_SVG, GROUP_ICON_SVG, TRASH_ICON_SVG, escapeHtml, nameInitials } from "./render.js";
 import { showRoleStep } from "./onboarding.js";
 import { connectRealtime } from "./realtime.js";
 import { tg } from "./telegram.js";
@@ -113,7 +106,6 @@ document.getElementById("back-to-groups-btn").addEventListener("click", () => sw
 
 async function fetchGroups() {
   const list = document.getElementById("groups");
-  list.innerHTML = skeletonListItems();
   const res = await apiFetch("/groups");
   if (!res.ok) {
     list.innerHTML = '<li class="list-empty">Не вдалося завантажити групи.</li>';
@@ -159,12 +151,20 @@ async function openGroupDetail(groupId, title) {
   document.getElementById("screen-group-detail").hidden = false;
   document.getElementById("tabbar").hidden = true;
 
+  // Explicit clear here (not inside fetchMembers) because this is the one
+  // call site switching to a *different* group's list — leaving the
+  // previous group's members on screen for the split-second the fetch is
+  // in flight would show the wrong group's people under the new title.
+  // fetchMembers itself no longer clears-then-refills on every call: a
+  // realtime-triggered refresh of the *same* group should just swap in
+  // fresh rows without an interim blank/skeleton frame (see mainApp.js's
+  // `members_changed` handler below).
+  document.getElementById("members").innerHTML = "";
   await fetchMembers(groupId);
 }
 
 async function fetchMembers(groupId) {
   const list = document.getElementById("members");
-  list.innerHTML = skeletonListItems();
   const res = await apiFetch(`/members?group_id=${groupId}`);
   if (!res.ok) {
     list.innerHTML = '<li class="list-empty">Не вдалося завантажити учасників.</li>';
