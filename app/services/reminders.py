@@ -1,5 +1,6 @@
 import logging
 from datetime import datetime, timedelta
+from html import escape
 
 from app.bot.bot_instance import bot
 from app.config import settings
@@ -7,6 +8,8 @@ from app.db import crud
 from app.db.session import async_session
 
 logger = logging.getLogger(__name__)
+
+REMINDER_STICKER_FILE_ID = "CAACAgIAAxkBAAFOjUZqTjtcAAHM3yK2EAMDk7k6Ao0F0iMAAiGpAAJihjhK3WFS7vThE6w8BA"
 
 
 async def send_reminders() -> None:
@@ -39,9 +42,11 @@ async def send_reminders() -> None:
 
             for user in recipients:
                 try:
+                    await bot.send_sticker(user.id, REMINDER_STICKER_FILE_ID)
                     await bot.send_message(
                         user.id,
-                        f"Нагадування: у групі «{group.title}» є повідомлення клієнта без відповіді.",
+                        f"🔔👀 Клієнт у групі «<b>{escape(group.title)}</b>» досі чекає на відповідь!\n"
+                        "💬 Не змушуй його чекати довше 🙏",
                     )
                 except Exception:
                     logger.warning("Не вдалося надіслати нагадування user_id=%s", user.id)

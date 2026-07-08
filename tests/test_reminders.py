@@ -26,6 +26,9 @@ class FakeBot:
     async def send_message(self, chat_id: int, text: str, **_kwargs: Any) -> None:
         self.sent.append((chat_id, text))
 
+    async def send_sticker(self, chat_id: int, sticker: str, **_kwargs: Any) -> None:
+        pass
+
 
 @pytest.fixture(autouse=True)
 async def _patch_reminders(monkeypatch: pytest.MonkeyPatch):
