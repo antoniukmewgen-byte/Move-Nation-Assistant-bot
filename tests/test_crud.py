@@ -29,6 +29,54 @@ async def test_set_user_role(db_session: AsyncSession) -> None:
     assert staff[0].role == Role.MANAGER
 
 
+async def test_sync_role_to_group_tags_updates_existing_staff_tags_and_reports_the_groups(
+    db_session: AsyncSession,
+) -> None:
+    await crud.create_group_record(db_session, group_id=100, title="Group A", created_by_userbot=True)
+    await crud.create_group_record(db_session, group_id=200, title="Group B", created_by_userbot=True)
+    await crud.get_or_create_user(db_session, 1, "bob", "Bob B.")
+    await crud.add_member_tag(db_session, 100, 1, Role.MANAGER.value)
+    await crud.add_member_tag(db_session, 200, 1, Role.MANAGER.value)
+    await db_session.flush()
+
+    updated_group_ids = await crud.sync_role_to_group_tags(db_session, 1, Role.TEAMLEAD)
+
+    assert sorted(updated_group_ids) == [100, 200]
+    members_100 = await crud.get_group_members(db_session, 100)
+    members_200 = await crud.get_group_members(db_session, 200)
+    assert [m.tag for m in members_100] == [Role.TEAMLEAD.value]
+    assert [m.tag for m in members_200] == [Role.TEAMLEAD.value]
+
+
+async def test_sync_role_to_group_tags_never_touches_client_tags(db_session: AsyncSession) -> None:
+    # A staff member could in principle also be tagged CLIENT_TAG in some
+    # unrelated group (a separate, independent membership) — changing their
+    # own staff role must never overwrite that.
+    await crud.create_group_record(db_session, group_id=100, title="Group A", created_by_userbot=True)
+    await crud.get_or_create_user(db_session, 1, "bob", "Bob B.")
+    await crud.add_member_tag(db_session, 100, 1, CLIENT_TAG)
+    await db_session.flush()
+
+    updated_group_ids = await crud.sync_role_to_group_tags(db_session, 1, Role.TEAMLEAD)
+
+    assert updated_group_ids == []
+    members = await crud.get_group_members(db_session, 100)
+    assert [m.tag for m in members] == [CLIENT_TAG]
+
+
+async def test_sync_role_to_group_tags_is_a_noop_when_the_tag_already_matches(
+    db_session: AsyncSession,
+) -> None:
+    await crud.create_group_record(db_session, group_id=100, title="Group A", created_by_userbot=True)
+    await crud.get_or_create_user(db_session, 1, "bob", "Bob B.")
+    await crud.add_member_tag(db_session, 100, 1, Role.MANAGER.value)
+    await db_session.flush()
+
+    updated_group_ids = await crud.sync_role_to_group_tags(db_session, 1, Role.MANAGER)
+
+    assert updated_group_ids == []
+
+
 async def test_session_string_round_trip(db_session: AsyncSession) -> None:
     await crud.get_or_create_user(db_session, 1, "alice", "Alice")
     assert await crud.get_user_session(db_session, 1) is None

@@ -8,16 +8,30 @@ signature-verification itself is already covered by
 `tests/test_telegram_auth.py`.
 """
 
+from typing import Any
+
 import pytest
 from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.api.routes import users as users_routes
 from app.api.schemas import RoleRequest
-from app.db.models import Base, Role
+from app.db import crud
+from app.db.models import CLIENT_TAG, Base, Role
+from app.services import group_service
 from app.services.telegram_auth import TelegramWebAppUser
 
 pytestmark = pytest.mark.asyncio
+
+
+class FakeBot:
+    """Stubs `group_service.bot` — see `group_service.sync_tag_to_telegram`."""
+
+    def __init__(self) -> None:
+        self.tagged: list[tuple[int, int, str]] = []
+
+    async def set_chat_member_tag(self, chat_id: int, user_id: int, tag: str, **_kwargs: Any) -> None:
+        self.tagged.append((chat_id, user_id, tag))
 
 
 @pytest.fixture(autouse=True)
@@ -69,3 +83,56 @@ async def test_set_role_works_even_without_a_prior_get_me_call() -> None:
     depend on request ordering — it must create the user row itself too."""
     updated = await users_routes.set_role(RoleRequest(role="SEO"), user=ALICE)
     assert updated.role == Role.SEO.value
+
+
+async def test_set_role_updates_existing_group_tags_and_syncs_to_telegram(
+    _patch_db, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Changing role in Settings must ripple out to every group where the
+    # person was already tagged with the old role — both in our own DB and
+    # as the native Telegram chat-member tag/badge.
+    async with _patch_db() as session:
+        await crud.get_or_create_user(session, 1, "alice", "Alice A.")
+        await crud.create_group_record(session, 100, "Group One", created_by_userbot=True)
+        await crud.create_group_record(session, 200, "Group Two", created_by_userbot=True)
+        await crud.add_member_tag(session, 100, 1, Role.MANAGER.value)
+        await crud.add_member_tag(session, 200, 1, Role.MANAGER.value)
+        await session.commit()
+
+    fake_bot = FakeBot()
+    monkeypatch.setattr(group_service, "bot", fake_bot)
+
+    updated = await users_routes.set_role(RoleRequest(role="TEAMLEAD"), user=ALICE)
+    assert updated.role == Role.TEAMLEAD.value
+
+    async with _patch_db() as session:
+        members_100 = await crud.get_group_members(session, 100)
+        members_200 = await crud.get_group_members(session, 200)
+        assert [m.tag for m in members_100] == [Role.TEAMLEAD.value]
+        assert [m.tag for m in members_200] == [Role.TEAMLEAD.value]
+
+    assert sorted(fake_bot.tagged) == [
+        (100, 1, Role.TEAMLEAD.value),
+        (200, 1, Role.TEAMLEAD.value),
+    ]
+
+
+async def test_set_role_does_not_touch_client_tags_in_other_groups(
+    _patch_db, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async with _patch_db() as session:
+        await crud.get_or_create_user(session, 1, "alice", "Alice A.")
+        await crud.create_group_record(session, 100, "Group One", created_by_userbot=True)
+        await crud.add_member_tag(session, 100, 1, CLIENT_TAG)
+        await session.commit()
+
+    fake_bot = FakeBot()
+    monkeypatch.setattr(group_service, "bot", fake_bot)
+
+    await users_routes.set_role(RoleRequest(role="MANAGER"), user=ALICE)
+
+    async with _patch_db() as session:
+        members = await crud.get_group_members(session, 100)
+        assert [m.tag for m in members] == [CLIENT_TAG]
+
+    assert fake_bot.tagged == []

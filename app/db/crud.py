@@ -28,6 +28,41 @@ async def set_user_role(session: AsyncSession, user_id: int, role: Role) -> None
         user.role = role
 
 
+async def sync_role_to_group_tags(session: AsyncSession, user_id: int, role: Role) -> list[int]:
+    """Приводить наявні staff-теги цього user_id у ВСІХ його групах до щойно
+    зміненої ролі (`users.role`, вже виставленої через `set_user_role` вище).
+
+    Без цього виклику зміна ролі в налаштуваннях Mini App (`POST /users/role`,
+    app/api/routes/users.py::set_role) оновлює лише сам рядок `users` — усі
+    вже наявні `group_members.tag`-рядки цієї людини (проставлені колись при
+    створенні групи, через /tag чи /members/tag) назавжди лишаються зі
+    старою роллю, і Mini App/нативний Telegram-бейдж і далі показують її
+    застарілою.
+
+    Свідомо чіпає лише рядки, де поточний тег — це якась ІНША staff-роль
+    (`{r.value for r in Role}`), а не `CLIENT_TAG`: людина в принципі може
+    одночасно бути співробітником і в якійсь іншій групі значитись клієнтом
+    (окреме, самостійне членство) — таке відношення зміна власної посади
+    зачіпати не повинна.
+
+    Повертає список `group_id`, у яких тег дійсно змінився — виклик далі
+    використовує це, щоб знати, для яких груп ще й дзеркалити зміну в сам
+    Telegram через `group_service.sync_tag_to_telegram`.
+    """
+    role_values = {r.value for r in Role}
+    result = await session.execute(select(GroupMember).where(GroupMember.user_id == user_id))
+    updated_group_ids: list[int] = []
+    for member in result.scalars():
+        if member.tag in role_values and member.tag != role.value:
+            member.tag = role.value
+            updated_group_ids.append(member.group_id)
+
+    if updated_group_ids:
+        await session.flush()
+
+    return updated_group_ids
+
+
 async def set_user_session(session: AsyncSession, user_id: int, encrypted_session: str) -> None:
     user = await session.get(User, user_id)
     if user:
