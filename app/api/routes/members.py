@@ -46,6 +46,7 @@ async def tag_member(payload: TagRequest, user_id: int = Depends(get_verified_us
         await _require_membership(session, payload.group_id, user_id)
         await crud.add_member_tag(session, payload.group_id, payload.user_id, payload.tag)
         await session.commit()
+    await group_service.sync_tag_to_telegram(payload.group_id, payload.user_id, payload.tag)
     return {"ok": True}
 
 

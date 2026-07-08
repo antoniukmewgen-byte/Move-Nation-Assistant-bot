@@ -10,6 +10,7 @@ from app.bot.guards import require_text, require_user
 from app.db import crud
 from app.db.models import GroupStatus
 from app.db.session import async_session
+from app.services import group_service
 
 router = Router()
 
@@ -103,8 +104,12 @@ async def on_member_joined_group(event: ChatMemberUpdated) -> None:
         return
 
     async with async_session() as session:
-        if await crud.clear_pending(session, event.chat.id, event.new_chat_member.user.id):
+        tag = await crud.clear_pending(session, event.chat.id, event.new_chat_member.user.id)
+        if tag is not None:
             await session.commit()
+
+    if tag is not None:
+        await group_service.sync_tag_to_telegram(event.chat.id, event.new_chat_member.user.id, tag)
 
 
 @router.message(Command("register"), F.chat.type.in_({"group", "supergroup"}))
@@ -146,6 +151,7 @@ async def cmd_tag(message: Message) -> None:
         await crud.add_member_tag(session, message.chat.id, target.id, tag_value)
         await session.commit()
 
+    await group_service.sync_tag_to_telegram(message.chat.id, target.id, tag_value)
     await message.answer(f"{target.full_name} позначено тегом «{tag_value}».")
 
 

@@ -174,7 +174,15 @@ async def test_cmd_tag_requires_a_tag_value(_patch_db) -> None:
     assert "Вкажи тег" in message.answers[0]
 
 
-async def test_cmd_tag_tags_the_replied_to_user(_patch_db) -> None:
+async def test_cmd_tag_tags_the_replied_to_user(_patch_db, monkeypatch: pytest.MonkeyPatch) -> None:
+    # sync_tag_to_telegram (app/services/group_service.py) talks to the real
+    # Telegram Bot API through the module-level `bot` singleton — stub it out
+    # the same way _kick_via_assistant_bot is stubbed in test_members_routes.py.
+    async def fake_sync_tag_to_telegram(chat_id: int, user_id: int, tag: str) -> None:
+        return None
+
+    monkeypatch.setattr(messages_handlers.group_service, "sync_tag_to_telegram", fake_sync_tag_to_telegram)
+
     target_message = FakeMessage(
         chat=FakeChat(id=100, type="group"), from_user=FakeUser(id=2, full_name="Bob B.")
     )

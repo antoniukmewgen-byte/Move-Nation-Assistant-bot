@@ -106,7 +106,7 @@ async def add_member_tag(
     return member
 
 
-async def clear_pending(session: AsyncSession, group_id: int, user_id: int) -> bool:
+async def clear_pending(session: AsyncSession, group_id: int, user_id: int) -> str | None:
     """Знімає прапорець pending, коли клієнт дійсно приєднався за пересланим лінком.
 
     add_member_tag (вище) ставить pending=True, коли пряме додавання клієнта
@@ -114,9 +114,12 @@ async def clear_pending(session: AsyncSession, group_id: int, user_id: int) -> b
     (app/services/group_service.py::add_client) — до фактичного приєднання
     Mini App інакше показував би його як уже повноцінного учасника групи.
     Викликається з app/bot/handlers/messages.py::on_member_joined_group, коли
-    Telegram підтверджує вступ. Повертає False, якщо для цього (group_id,
-    user_id) не було жодного pending-рядка (типово — не клієнт, а штатний
-    співробітник, чи клієнт, доданий напряму без pending).
+    Telegram підтверджує вступ. Повертає тег рядка (щоб той самий виклик міг
+    ще й синхронізувати його в Telegram через group_service.sync_tag_to_telegram
+    — до фактичного приєднання це було неможливо, учасника ще не було в чаті),
+    або None, якщо для цього (group_id, user_id) не було жодного pending-рядка
+    (типово — не клієнт, а штатний співробітник, чи клієнт, доданий напряму
+    без pending).
     """
     result = await session.execute(
         select(GroupMember).where(
@@ -125,10 +128,10 @@ async def clear_pending(session: AsyncSession, group_id: int, user_id: int) -> b
     )
     member = result.scalar_one_or_none()
     if member is None:
-        return False
+        return None
     member.pending = False
     await session.flush()
-    return True
+    return member.tag
 
 
 async def remove_member(session: AsyncSession, group_id: int, user_id: int) -> bool:

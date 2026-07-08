@@ -112,8 +112,15 @@ async def create_group_with_team(
 
 async def add_client_to_group(
     actor_session: str, group_id: int, identifier: str
-) -> tuple[int | None, str | None]:
-    """Додає клієнта за username в групу від імені співробітника, який ініціював дію."""
+) -> tuple[int | None, str | None, str | None]:
+    """Додає клієнта за username в групу від імені співробітника, який ініціював дію.
+
+    Повертає ``(user_id, full_name, invite_link)``. ``full_name`` береться з
+    резолвнутої Telethon-entity (first_name + last_name), а не з самого
+    ``identifier`` (це лише username) — інакше клієнт назавжди лишався б у
+    нашій БД без full_name і всюди, де застосунок показує людей за іменем
+    (team.py, Mini App), падав би назад на username.
+    """
     client = _client_for(actor_session)
     await client.connect()
 
@@ -124,14 +131,16 @@ async def add_client_to_group(
         try:
             entity = await client.get_entity(identifier)
         except (ValueError, UsernameInvalidError):
-            return None, None
+            return None, None, None
+
+        full_name = " ".join(part for part in (entity.first_name, entity.last_name) if part) or None
 
         try:
             await client(InviteToChannelRequest(channel=channel, users=[entity]))
-            return entity.id, None
+            return entity.id, full_name, None
         except (UserPrivacyRestrictedError, UserNotMutualContactError):
             link = await client(ExportChatInviteRequest(peer=channel))
-            return entity.id, link.link
+            return entity.id, full_name, link.link
     finally:
         await client.disconnect()
 

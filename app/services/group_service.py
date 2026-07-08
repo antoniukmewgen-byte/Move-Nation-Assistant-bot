@@ -18,8 +18,10 @@ from __future__ import annotations
 
 import logging
 
+from aiogram.exceptions import TelegramBadRequest
 from telethon.errors import FloodWaitError
 
+from app.bot.bot_instance import bot
 from app.db import crud
 from app.db.models import CLIENT_TAG, Group
 from app.db.session import async_session
@@ -27,6 +29,45 @@ from app.services.crypto import decrypt_session
 from app.userbot.actions import add_client_to_group, create_group_with_team
 
 logger = logging.getLogger(__name__)
+
+
+async def sync_tag_to_telegram(chat_id: int, user_id: int, tag: str) -> None:
+    """Дзеркалить наш тег учасника в нативний Telegram-тег того ж учасника.
+
+    Спирається на право `can_manage_tags` ("Зміна тегів учасників"), яке
+    отримує бот-асистент при промоуті в адміни (див.
+    app/userbot/actions.py::ASSISTANT_ADMIN_RIGHTS) — тож працює лише в
+    групах, де в бота вже є ця роль. Telegram обмежує тег 16 символами й не
+    дозволяє emoji. Best-effort і без винятків назовні: тег у нашій БД вже
+    закомічений викликачем, а видимий у Telegram бейдж — лише косметика
+    поверх нього, тож збій синхронізації не повинен ламати основний флоу.
+    """
+    try:
+        await bot.set_chat_member_tag(chat_id, user_id, tag[:16])
+    except TelegramBadRequest as exc:
+        if "CHAT_CREATOR_REQUIRED" in exc.message:
+            # Telegram ніколи не дозволяє промоутнутому адміну (навіть із
+            # can_manage_tags) тегувати власника (creator) чату — це може
+            # зробити лише сам власник. Ми не зберігаємо, хто саме створив
+            # конкретну групу (див. app/userbot/actions.py::delete_group),
+            # тож заздалегідь пропустити цей виклик для власника не можемо —
+            # але це очікуваний, непоправний no-op для нього одного, а не
+            # реальний збій, тож логуємо тихо, без warning і трейсбеку.
+            logger.info(
+                "Не можу встановити тег «%s» для user_id=%s у групі %s — це власник чату, "
+                "Telegram дозволяє тегувати творця лише йому самому",
+                tag,
+                user_id,
+                chat_id,
+            )
+            return
+        logger.warning(
+            "Не вдалося встановити тег «%s» у Telegram для user_id=%s у групі %s: %s",
+            tag,
+            user_id,
+            chat_id,
+            exc.message,
+        )
 
 
 class GroupServiceError(Exception):
@@ -83,7 +124,12 @@ async def create_group(user_id: int, title: str) -> Group:
                 await crud.add_member_tag(session, chat_id, staff_user_id, role.value)
         await session.commit()
         await session.refresh(group)
-        return group
+
+    for staff_user_id, _username, role in staff_ids:
+        if role is not None:
+            await sync_tag_to_telegram(chat_id, staff_user_id, role.value)
+
+    return group
 
 
 async def add_client(user_id: int, group_id: int, identifier: str) -> tuple[int, str | None]:
@@ -109,7 +155,7 @@ async def add_client(user_id: int, group_id: int, identifier: str) -> tuple[int,
             raise NotConnectedError()
 
     try:
-        client_user_id, invite_link = await add_client_to_group(
+        client_user_id, client_full_name, invite_link = await add_client_to_group(
             decrypt_session(encrypted_session), group_id, identifier
         )
     except FloodWaitError:
@@ -124,8 +170,16 @@ async def add_client(user_id: int, group_id: int, identifier: str) -> tuple[int,
         raise ClientNotFoundError()
 
     async with async_session() as session:
-        await crud.get_or_create_user(session, client_user_id, identifier.lstrip("@"), None)
+        await crud.get_or_create_user(session, client_user_id, identifier.lstrip("@"), client_full_name)
         await crud.add_member_tag(session, group_id, client_user_id, CLIENT_TAG, pending=invite_link is not None)
         await session.commit()
+
+    if invite_link is None:
+        # Клієнта вже додано напряму — він учасник чату, тег можна виставити
+        # одразу. Якщо ж лишився лише invite_link (pending=True вище), він
+        # ще не в чаті, і setChatMemberTag впаде — синхронізуємо тег пізніше,
+        # коли on_member_joined_group підтвердить фактичне приєднання
+        # (app/bot/handlers/messages.py).
+        await sync_tag_to_telegram(group_id, client_user_id, CLIENT_TAG)
 
     return client_user_id, invite_link

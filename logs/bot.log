@@ -25,3 +25,39 @@
 2026-07-08 14:32:19,786 | WARNING  | aiogram.dispatcher | Sleep for 1.000000 seconds and try again... (tryings = 0, bot id = 8979568031)
 2026-07-08 14:32:19,787 | INFO     | aiogram.dispatcher | Polling stopped for bot @MoveNation_Assistant_bot id=8979568031 - 'Move Nation Assistant'
 2026-07-08 14:32:19,789 | INFO     | __main__ | Зупинено користувачем.
+2026-07-08 14:44:36,163 | INFO     | aiogram.dispatcher | Start polling
+2026-07-08 14:44:36,245 | INFO     | aiogram.dispatcher | Run polling for bot @MoveNation_Assistant_bot id=8979568031 - 'Move Nation Assistant'
+2026-07-08 14:44:49,477 | WARNING  | app.services.group_service | Не вдалося встановити тег «Керівник» у Telegram для user_id=8676009145 у групі -1004421517424 (у бота немає права can_manage_tags у цьому чаті)
+Traceback (most recent call last):
+  File "D:\GitHub\Move-Nation-Assistant-bot\app\services\group_service.py", line 46, in sync_tag_to_telegram
+    await bot.set_chat_member_tag(chat_id, user_id, tag[:16])
+  File "D:\GitHub\Move-Nation-Assistant-bot\.venv\Lib\site-packages\aiogram\client\bot.py", line 6003, in set_chat_member_tag
+    return await self(call, request_timeout=request_timeout)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\GitHub\Move-Nation-Assistant-bot\.venv\Lib\site-packages\aiogram\client\bot.py", line 509, in __call__
+    return await self.session(self, method, timeout=request_timeout)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\GitHub\Move-Nation-Assistant-bot\.venv\Lib\site-packages\aiogram\client\session\base.py", line 259, in __call__
+    return cast(TelegramType, await middleware(bot, method))
+                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\GitHub\Move-Nation-Assistant-bot\.venv\Lib\site-packages\aiogram\client\session\aiohttp.py", line 177, in make_request
+    response = self.check_response(
+               ^^^^^^^^^^^^^^^^^^^^
+  File "D:\GitHub\Move-Nation-Assistant-bot\.venv\Lib\site-packages\aiogram\client\session\base.py", line 121, in check_response
+    raise TelegramBadRequest(method=method, message=description)
+aiogram.exceptions.TelegramBadRequest: Telegram server says - Bad Request: CHAT_CREATOR_REQUIRED
+2026-07-08 14:46:41,248 | INFO     | aiogram.dispatcher | Polling stopped
+2026-07-08 14:46:41,248 | INFO     | __main__ | Завершую роботу: зупиняю планувальник, бота, API та з'єднання з БД…
+2026-07-08 14:46:41,249 | ERROR    | aiogram.dispatcher | Failed to fetch updates - TelegramNetworkError: HTTP Client says - ServerDisconnectedError: Server disconnected
+2026-07-08 14:46:41,250 | WARNING  | aiogram.dispatcher | Sleep for 1.000000 seconds and try again... (tryings = 0, bot id = 8979568031)
+2026-07-08 14:46:41,251 | INFO     | aiogram.dispatcher | Polling stopped for bot @MoveNation_Assistant_bot id=8979568031 - 'Move Nation Assistant'
+2026-07-08 14:46:41,252 | INFO     | __main__ | Зупинено користувачем.
+2026-07-08 14:47:08,299 | INFO     | aiogram.dispatcher | Start polling
+2026-07-08 14:47:08,377 | INFO     | aiogram.dispatcher | Run polling for bot @MoveNation_Assistant_bot id=8979568031 - 'Move Nation Assistant'
+2026-07-08 14:47:21,424 | INFO     | app.services.group_service | Не можу встановити тег «Керівник» для user_id=8676009145 у групі -1003843548534 — це власник чату, Telegram дозволяє тегувати творця лише йому самому
+2026-07-08 14:48:41,635 | INFO     | aiogram.dispatcher | Polling stopped
+2026-07-08 14:48:41,636 | INFO     | __main__ | Завершую роботу: зупиняю планувальник, бота, API та з'єднання з БД…
+2026-07-08 14:48:41,637 | ERROR    | aiogram.dispatcher | Failed to fetch updates - TelegramNetworkError: HTTP Client says - ServerDisconnectedError: Server disconnected
+2026-07-08 14:48:41,637 | WARNING  | aiogram.dispatcher | Sleep for 1.000000 seconds and try again... (tryings = 0, bot id = 8979568031)
+2026-07-08 14:48:41,639 | INFO     | aiogram.dispatcher | Polling stopped for bot @MoveNation_Assistant_bot id=8979568031 - 'Move Nation Assistant'
+2026-07-08 14:48:41,640 | INFO     | __main__ | Зупинено користувачем.

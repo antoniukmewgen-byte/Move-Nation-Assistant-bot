@@ -60,6 +60,20 @@ def _patch_bot_kick(monkeypatch: pytest.MonkeyPatch) -> list[tuple[int, int]]:
     return calls
 
 
+@pytest.fixture(autouse=True)
+def _patch_sync_tag(monkeypatch: pytest.MonkeyPatch) -> list[tuple[int, int, str]]:
+    # sync_tag_to_telegram (app/services/group_service.py) also talks to the
+    # real Bot API (setChatMemberTag) through the same `bot` singleton — same
+    # reasoning as _patch_bot_kick above, must be stubbed for every test here.
+    calls: list[tuple[int, int, str]] = []
+
+    async def fake_sync_tag_to_telegram(chat_id: int, user_id: int, tag: str) -> None:
+        calls.append((chat_id, user_id, tag))
+
+    monkeypatch.setattr(group_service, "sync_tag_to_telegram", fake_sync_tag_to_telegram)
+    return calls
+
+
 async def test_list_members_rejects_non_members(_patch_db) -> None:
     await _seed_group_with_member(_patch_db)
 
@@ -132,7 +146,7 @@ async def test_add_client_success_persists_client_and_tag(_patch_db, monkeypatch
         assert session_string == "decrypted-encrypted-session-string"
         assert group_id == 100
         assert identifier == "@newclient"
-        return 42, "https://t.me/+invitelink"
+        return 42, "New Client", "https://t.me/+invitelink"
 
     monkeypatch.setattr(group_service, "add_client_to_group", fake_add_client_to_group)
 
@@ -157,7 +171,7 @@ async def test_add_client_user_not_found_returns_404(_patch_db, monkeypatch: pyt
     monkeypatch.setattr(group_service, "decrypt_session", lambda s: s)
 
     async def fake_add_client_to_group(*_args):
-        return None, None
+        return None, None, None
 
     monkeypatch.setattr(group_service, "add_client_to_group", fake_add_client_to_group)
 

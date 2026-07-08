@@ -134,11 +134,19 @@ async def test_process_contact_success_persists_client_and_tags(
 
     monkeypatch.setattr(group_service, "decrypt_session", lambda s: "decrypted-" + s)
 
+    # sync_tag_to_telegram talks to the real Bot API through the module-level
+    # `bot` singleton — stub it so this test never hits the network (same
+    # reasoning as add_client_to_group below).
+    async def fake_sync_tag_to_telegram(chat_id: int, user_id: int, tag: str) -> None:
+        return None
+
+    monkeypatch.setattr(group_service, "sync_tag_to_telegram", fake_sync_tag_to_telegram)
+
     async def fake_add_client_to_group(session_string, group_id, identifier):
         assert session_string == "decrypted-encrypted-session-string"
         assert group_id == 100
         assert identifier == "@newclient"
-        return 42, None
+        return 42, "New Client", None
 
     monkeypatch.setattr(group_service, "add_client_to_group", fake_add_client_to_group)
 
@@ -171,7 +179,7 @@ async def test_process_contact_success_with_invite_link_when_direct_add_fails(
     monkeypatch.setattr(group_service, "decrypt_session", lambda s: s)
 
     async def fake_add_client_to_group(*_args):
-        return 42, "https://t.me/+invitelink"
+        return 42, "New Client", "https://t.me/+invitelink"
 
     monkeypatch.setattr(group_service, "add_client_to_group", fake_add_client_to_group)
 
@@ -196,7 +204,7 @@ async def test_process_contact_user_not_found(_patch_db, monkeypatch: pytest.Mon
     monkeypatch.setattr(group_service, "decrypt_session", lambda s: s)
 
     async def fake_add_client_to_group(*_args):
-        return None, None
+        return None, None, None
 
     monkeypatch.setattr(group_service, "add_client_to_group", fake_add_client_to_group)
 

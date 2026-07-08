@@ -81,6 +81,14 @@ async def test_process_group_title_success_creates_group_and_tags_staff(
 
     monkeypatch.setattr(group_service, "decrypt_session", lambda s: "decrypted-" + s)
 
+    # sync_tag_to_telegram talks to the real Bot API through the module-level
+    # `bot` singleton — stub it so this test never hits the network (same
+    # reasoning as create_group_with_team below).
+    async def fake_sync_tag_to_telegram(chat_id: int, user_id: int, tag: str) -> None:
+        return None
+
+    monkeypatch.setattr(group_service, "sync_tag_to_telegram", fake_sync_tag_to_telegram)
+
     async def fake_create_group_with_team(session_string, title, staff):
         assert session_string == "decrypted-encrypted-session-string"
         assert title == "New Group"
