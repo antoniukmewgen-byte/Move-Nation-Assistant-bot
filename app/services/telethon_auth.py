@@ -43,6 +43,7 @@ from telethon.sessions import StringSession
 from app.config import settings
 from app.db import crud
 from app.db.session import async_session
+from app.services import realtime
 from app.services.crypto import encrypt_session
 
 logger = logging.getLogger(__name__)
@@ -193,5 +194,10 @@ async def _finish(user_id: int, client: TelegramClient) -> AuthStepResult:
     async with async_session() as session:
         await crud.set_user_session(session, user_id, encrypted)
         await session.commit()
+
+    # is_connected just flipped to true — both the bot's /connect flow and
+    # the Mini App's registration screen route through here (see module
+    # docstring), so this one hook covers Profile's "Активно" pill either way.
+    await realtime.notify_user(user_id, {"type": "profile_changed"})
 
     return AuthStepResult(status="connected")

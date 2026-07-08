@@ -7,7 +7,7 @@ from app.api.deps import get_verified_user_id
 from app.api.schemas import GroupCreateRequest, GroupOut
 from app.db import crud
 from app.db.session import async_session
-from app.services import group_service
+from app.services import group_service, realtime
 from app.services.crypto import decrypt_session
 from app.userbot.actions import delete_group as delete_group_in_telegram
 
@@ -72,10 +72,17 @@ async def remove_group(group_id: int, requested_by: int = Depends(get_verified_u
             )
 
     async with async_session() as session:
+        # Captured *before* the delete below, same reasoning as
+        # app/services/realtime.py::notify_group's docstring: once the group
+        # row (and its cascaded group_members rows) is gone, there's nothing
+        # left to resolve a member list from.
+        member_ids = [m.user_id for m in await crud.get_group_members(session, group_id)]
         removed = await crud.delete_group(session, group_id)
         await session.commit()
 
     if not removed:
         raise HTTPException(status_code=404, detail="Групу не знайдено")
+
+    await realtime.notify_users(member_ids, {"type": "groups_changed"})
 
     return {"ok": True, "deleted_in_telegram": deleted_in_telegram}

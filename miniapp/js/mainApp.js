@@ -9,11 +9,18 @@ import {
   skeletonListItems,
 } from "./render.js";
 import { showRoleStep } from "./onboarding.js";
+import { connectRealtime } from "./realtime.js";
 import { tg } from "./telegram.js";
 
 // --- Main app: groups (tab) / profile (tab) / group detail (drill-down) ---
 
 let selectedGroupId = null;
+
+// enterMainApp() below runs again every time the user returns here from a
+// sub-screen (e.g. "Змінити" role from Profile settings routes back through
+// routeByProfile -> enterMainApp) — the realtime socket must only ever be
+// opened once per Mini App session, not re-opened on every such return.
+let realtimeStarted = false;
 
 // Mirrors app/db/models.py::CLIENT_TAG — only client rows get a remove
 // button; staff members are managed via /tag, not this delete flow.
@@ -56,6 +63,30 @@ export async function enterMainApp(me, initialTab = "groups") {
   showStep("main-app");
   switchTab(initialTab);
   await fetchGroups();
+
+  if (!realtimeStarted) {
+    realtimeStarted = true;
+    connectRealtime({
+      groups_changed: fetchGroups,
+      members_changed: (event) => {
+        // Only the group detail screen the user currently has open cares
+        // about a members_changed push for some other group_id — an
+        // always-open, always-listening socket means most events that
+        // arrive are simply irrelevant to whatever's on screen right now.
+        if (event.group_id === selectedGroupId) fetchMembers(selectedGroupId);
+      },
+      profile_changed: refreshProfile,
+    });
+  }
+}
+
+async function refreshProfile() {
+  const res = await apiFetch("/users/me");
+  if (!res.ok) return;
+  const me = await res.json();
+  document.getElementById("profile-role").textContent = me.role;
+  document.getElementById("profile-role-label").textContent = me.role;
+  document.getElementById("connection-status-pill").textContent = me.is_connected ? "Активно" : "Не підключено";
 }
 
 document.getElementById("change-role-btn").addEventListener("click", () => showRoleStep({ editing: true }));

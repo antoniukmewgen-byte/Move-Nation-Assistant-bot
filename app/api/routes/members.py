@@ -10,7 +10,7 @@ from app.api.schemas import AddClientRequest, MemberOut, RemoveMemberRequest, Ta
 from app.bot.bot_instance import bot
 from app.db import crud
 from app.db.session import async_session
-from app.services import group_service
+from app.services import group_service, realtime
 from app.services.crypto import decrypt_session
 from app.userbot.actions import remove_member_from_group as remove_member_in_telegram
 
@@ -47,6 +47,7 @@ async def tag_member(payload: TagRequest, user_id: int = Depends(get_verified_us
         await crud.add_member_tag(session, payload.group_id, payload.user_id, payload.tag)
         await session.commit()
     await group_service.sync_tag_to_telegram(payload.group_id, payload.user_id, payload.tag)
+    await realtime.notify_group(payload.group_id, {"type": "members_changed", "group_id": payload.group_id})
     return {"ok": True}
 
 
@@ -142,5 +143,10 @@ async def remove_member(payload: RemoveMemberRequest, requested_by: int = Depend
 
     if not removed:
         raise HTTPException(status_code=404, detail="Учасника не знайдено")
+
+    # The removed user's own /groups list lost this group; everyone else
+    # still in it needs their /members list to drop the removed row.
+    await realtime.notify_user(payload.user_id, {"type": "groups_changed"})
+    await realtime.notify_group(payload.group_id, {"type": "members_changed", "group_id": payload.group_id})
 
     return {"ok": True, "removed_in_telegram": removed_in_telegram}

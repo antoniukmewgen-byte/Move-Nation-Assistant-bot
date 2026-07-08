@@ -13,7 +13,7 @@ from app.config import settings
 from app.db import crud
 from app.db.models import User
 from app.db.session import async_session
-from app.services import group_service, reminders
+from app.services import group_service, realtime, reminders
 from app.services.group_creation_registry import is_pending
 
 router = Router()
@@ -113,8 +113,12 @@ async def on_bot_removed_from_group(event: ChatMemberUpdated) -> None:
     """
     if event.chat.type in ("group", "supergroup"):
         async with async_session() as session:
+            # Captured before the delete — same reasoning as
+            # app/api/routes/groups.py::remove_group.
+            member_ids = [m.user_id for m in await crud.get_group_members(session, event.chat.id)]
             await crud.delete_group(session, event.chat.id)
             await session.commit()
+        await realtime.notify_users(member_ids, {"type": "groups_changed"})
         return
 
     if event.chat.type == "private":
@@ -145,6 +149,7 @@ async def on_member_joined_group(event: ChatMemberUpdated) -> None:
 
     if tag is not None:
         await group_service.sync_tag_to_telegram(event.chat.id, event.new_chat_member.user.id, tag)
+        await realtime.notify_group(event.chat.id, {"type": "members_changed", "group_id": event.chat.id})
 
 
 @router.chat_member(ChatMemberUpdatedFilter(member_status_changed=LEAVE_TRANSITION))
@@ -165,6 +170,11 @@ async def on_member_left_group(event: ChatMemberUpdated) -> None:
         removed = await crud.remove_member(session, event.chat.id, event.old_chat_member.user.id)
         if removed:
             await session.commit()
+
+    if removed:
+        left_user_id = event.old_chat_member.user.id
+        await realtime.notify_user(left_user_id, {"type": "groups_changed"})
+        await realtime.notify_group(event.chat.id, {"type": "members_changed", "group_id": event.chat.id})
 
 
 @router.message(Command("sync"), F.chat.type.in_({"group", "supergroup"}))
@@ -239,6 +249,11 @@ async def track_group_message(message: Message) -> None:
             await crud.clear_awaiting_response(session, message.chat.id)
 
         await session.commit()
+
+    # The "очікує" badge lives on the group row in each member's /groups
+    # list, not on a member row — so this is groups_changed, not
+    # members_changed, unlike the other hooks in this file.
+    await realtime.notify_group(message.chat.id, {"type": "groups_changed"})
 
     if sender_is_client:
         interval = timedelta(minutes=settings.reminder_interval_minutes)

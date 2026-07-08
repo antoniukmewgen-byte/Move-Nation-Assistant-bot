@@ -26,6 +26,7 @@ from app.bot.bot_instance import bot
 from app.db import crud
 from app.db.models import CLIENT_TAG, Group, User
 from app.db.session import async_session
+from app.services import realtime
 from app.services.crypto import decrypt_session
 from app.services.group_creation_registry import mark_pending, unmark_pending
 from app.userbot.actions import add_client_to_group, create_group_with_team, scan_group_members
@@ -177,6 +178,11 @@ async def create_group(user_id: int, title: str) -> Group:
 
         await _send_group_welcome_message(chat_id, title, staff)
 
+        # Everyone tagged into the new group just gained a row in their own
+        # /groups list — tell each of their Mini App sessions to refetch it.
+        tagged_user_ids = [staff_user_id for staff_user_id, _username, role in staff_ids if role is not None]
+        await realtime.notify_users(tagged_user_ids, {"type": "groups_changed"})
+
         return group
     finally:
         # Stays marked through the DB/tag-sync/welcome-message steps above
@@ -236,6 +242,12 @@ async def add_client(user_id: int, group_id: int, identifier: str) -> tuple[int,
         # (app/bot/handlers/messages.py).
         await sync_tag_to_telegram(group_id, client_user_id, CLIENT_TAG)
 
+    # The client just gained a row in their own /groups list, and everyone
+    # already in the group needs their /members list to reflect the new row
+    # too (whether the client is pending an invite-link join or already in).
+    await realtime.notify_user(client_user_id, {"type": "groups_changed"})
+    await realtime.notify_group(group_id, {"type": "members_changed", "group_id": group_id})
+
     return client_user_id, invite_link
 
 
@@ -285,6 +297,11 @@ async def offboard_staff(user_id: int) -> int:
 
     if not deleted:
         raise StaffNotFoundError()
+
+    # Everyone else still in each of these groups needs their /members list
+    # to drop this now ex-staff row.
+    for group in groups:
+        await realtime.notify_group(group.id, {"type": "members_changed", "group_id": group.id})
 
     return len(groups)
 
@@ -351,5 +368,14 @@ async def sync_group(actor_user_id: int, group_id: int, title: str) -> tuple[int
 
     for user_id, tag in changed_tags:
         await sync_tag_to_telegram(group_id, user_id, tag)
+
+    # Anyone whose tag changed or who got removed just had their own
+    # /groups list affected (a group appearing/disappearing, or its badge
+    # changing); everyone currently in the group needs a /members refetch.
+    affected_user_ids = {user_id for user_id, _tag in changed_tags} | set(removed_ids)
+    if affected_user_ids:
+        await realtime.notify_users(affected_user_ids, {"type": "groups_changed"})
+    if changed_tags or removed_ids:
+        await realtime.notify_group(group_id, {"type": "members_changed", "group_id": group_id})
 
     return len(changed_tags), len(removed_ids)

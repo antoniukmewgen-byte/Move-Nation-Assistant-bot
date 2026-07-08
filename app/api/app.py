@@ -5,7 +5,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import Response
 
-from app.api.routes import auth, groups, health, members, users
+from app.api.routes import auth, groups, health, members, realtime, users
 from app.config import BASE_DIR, settings
 
 api = FastAPI(title="MoveNation Assistant API")
@@ -46,5 +46,6 @@ api.include_router(groups.router)
 api.include_router(members.router)
 api.include_router(users.router)
 api.include_router(auth.router)
+api.include_router(realtime.router)
 
 api.mount("/miniapp", StaticFiles(directory=str(BASE_DIR / "miniapp"), html=True), name="miniapp")

@@ -5,7 +5,7 @@ from app.api.schemas import RoleOut, RoleRequest, UserMeOut
 from app.db import crud
 from app.db.models import Role, User
 from app.db.session import async_session
-from app.services import group_service
+from app.services import group_service, realtime
 from app.services.telegram_auth import TelegramWebAppUser
 
 router = APIRouter(prefix="/users", tags=["users"])
@@ -57,6 +57,13 @@ async def set_role(
 
     for group_id in updated_group_ids:
         await group_service.sync_tag_to_telegram(group_id, user.id, role.value)
+
+    # The role shown on this user's own Profile screen changed either way
+    # (even if no group tags needed updating); each affected group's
+    # /members list needs a refetch for its badge too.
+    await realtime.notify_user(user.id, {"type": "profile_changed"})
+    for group_id in updated_group_ids:
+        await realtime.notify_group(group_id, {"type": "members_changed", "group_id": group_id})
 
     return _to_user_out(db_user)
 
