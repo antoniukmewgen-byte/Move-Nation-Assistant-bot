@@ -137,9 +137,24 @@ async def clear_pending(session: AsyncSession, group_id: int, user_id: int) -> s
 async def remove_member(session: AsyncSession, group_id: int, user_id: int) -> bool:
     """Прибирає учасника (тег) з конкретної групи.
 
-    Повертає True, якщо такий рядок дійсно існував і був видалений, False —
-    якщо цього user_id вже не було серед учасників групи (нема що видаляти,
-    а не помилка — той самий підхід, що й у delete_group).
+    Якщо після цього в user_id не лишилось жодного членства в жодній іншій
+    групі і в нього немає ролі (тобто це не співробітник, а клієнт чи
+    будь-хто інший без посади) — прибирає заодно й сам рядок `users`: немає
+    сенсу тримати навіки запис про людину, яка вже ніде не значиться і
+    ніколи не була частиною команди.
+
+    Співробітників (`User.role IS NOT NULL`) це не чіпає, навіть якщо в них
+    теж не лишилось жодного членства — те, що людину прибрали з однієї
+    конкретної групи, ще нічого не каже про її статус у компанії загалом
+    (вона й далі в "стартовому складі" для будь-яких нових груп). Звільнення
+    співробітника — окрема, явна дія (`group_service.offboard_staff`, зараз
+    єдиний тригер — сама людина блокує бота в особистих, див.
+    app/bot/handlers/messages.py::on_bot_removed_from_group), а не побічний
+    ефект видалення з однієї групи.
+
+    Повертає True, якщо рядок `group_members` дійсно існував і був
+    видалений, False — якщо цього user_id вже не було серед учасників групи
+    (нема що видаляти, а не помилка — той самий підхід, що й у delete_group).
     """
     result = await session.execute(
         select(GroupMember).where(GroupMember.group_id == group_id, GroupMember.user_id == user_id)
@@ -148,6 +163,41 @@ async def remove_member(session: AsyncSession, group_id: int, user_id: int) -> b
     if member is None:
         return False
     await session.delete(member)
+    await session.flush()
+
+    user = await session.get(User, user_id)
+    if user is not None and user.role is None:
+        remaining = await session.execute(select(GroupMember).where(GroupMember.user_id == user_id))
+        if remaining.scalar_one_or_none() is None:
+            await session.delete(user)
+            await session.flush()
+
+    return True
+
+
+async def delete_user(session: AsyncSession, user_id: int) -> bool:
+    """Видаляє співробітника повністю — усі його теги/членства в БУДЬ-ЯКИХ
+    групах, а тоді сам рядок `users` (роль, /connect-сесію, усе).
+
+    Використовується при звільненні (див. app/services/group_service.py::
+    offboard_staff) — на відміну від `remove_member` вище, який прибирає
+    лише одну конкретну (group_id, user_id) пару. `GroupMember.user_id` — FK
+    без ORM-каскаду з боку `User.memberships` (на відміну від `Group.members`,
+    де є `cascade="all, delete-orphan"`, — див. app/db/models.py), тож усі
+    членства цього user_id прибираємо явно, в тій самій транзакції, перш ніж
+    видаляти сам рядок `users` — інакше видалення впало б на зовнішньому ключі.
+
+    Повертає True, якщо рядок `users` дійсно існував і був видалений, False —
+    якщо такого user_id вже нема (той самий підхід, що й у delete_group).
+    """
+    result = await session.execute(select(GroupMember).where(GroupMember.user_id == user_id))
+    for member in result.scalars():
+        await session.delete(member)
+
+    user = await session.get(User, user_id)
+    if user is None:
+        return False
+    await session.delete(user)
     await session.flush()
     return True
 

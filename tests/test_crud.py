@@ -2,7 +2,7 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import crud
-from app.db.models import CLIENT_TAG, Role
+from app.db.models import CLIENT_TAG, Role, User
 
 pytestmark = pytest.mark.asyncio
 
@@ -72,6 +72,77 @@ async def test_remove_member_reports_false_when_not_a_member(db_session: AsyncSe
     await crud.create_group_record(db_session, group_id=100, title="Group A", created_by_userbot=True)
 
     assert await crud.remove_member(db_session, 100, 999) is False
+
+
+async def test_remove_member_also_deletes_the_user_row_when_it_was_their_last_group(
+    db_session: AsyncSession,
+) -> None:
+    # A client (no role) removed from the only group they were tagged in has
+    # nothing left tying them to the system — the `users` row should go too,
+    # not just this one `group_members` row.
+    await crud.create_group_record(db_session, group_id=100, title="Group A", created_by_userbot=True)
+    await crud.get_or_create_user(db_session, 2, "client", "Client")
+    await crud.add_member_tag(db_session, 100, 2, CLIENT_TAG)
+    await db_session.flush()
+
+    await crud.remove_member(db_session, 100, 2)
+
+    assert await db_session.get(User, 2) is None
+
+
+async def test_remove_member_keeps_the_user_row_if_still_a_member_elsewhere(
+    db_session: AsyncSession,
+) -> None:
+    await crud.create_group_record(db_session, group_id=100, title="Group A", created_by_userbot=True)
+    await crud.create_group_record(db_session, group_id=200, title="Group B", created_by_userbot=True)
+    await crud.get_or_create_user(db_session, 2, "client", "Client")
+    await crud.add_member_tag(db_session, 100, 2, CLIENT_TAG)
+    await crud.add_member_tag(db_session, 200, 2, CLIENT_TAG)
+    await db_session.flush()
+
+    await crud.remove_member(db_session, 100, 2)
+
+    assert await db_session.get(User, 2) is not None
+
+
+async def test_remove_member_never_deletes_a_staff_member_even_without_remaining_groups(
+    db_session: AsyncSession,
+) -> None:
+    # Losing membership in one specific group must never look like an
+    # offboarding side effect for someone with an assigned role — that's a
+    # deliberate, separate action (see group_service.offboard_staff).
+    await crud.create_group_record(db_session, group_id=100, title="Group A", created_by_userbot=True)
+    await crud.get_or_create_user(db_session, 1, "bob", "Bob B.")
+    await crud.set_user_role(db_session, 1, Role.MANAGER)
+    await crud.add_member_tag(db_session, 100, 1, Role.MANAGER.value)
+    await db_session.flush()
+
+    await crud.remove_member(db_session, 100, 1)
+
+    assert await db_session.get(User, 1) is not None
+
+
+async def test_delete_user_removes_memberships_in_every_group_and_the_user_row(
+    db_session: AsyncSession,
+) -> None:
+    await crud.create_group_record(db_session, group_id=100, title="Group A", created_by_userbot=True)
+    await crud.create_group_record(db_session, group_id=200, title="Group B", created_by_userbot=True)
+    await crud.get_or_create_user(db_session, 1, "bob", "Bob B.")
+    await crud.set_user_role(db_session, 1, Role.TEAMLEAD)
+    await crud.add_member_tag(db_session, 100, 1, Role.TEAMLEAD.value)
+    await crud.add_member_tag(db_session, 200, 1, Role.TEAMLEAD.value)
+    await db_session.flush()
+
+    deleted = await crud.delete_user(db_session, 1)
+
+    assert deleted is True
+    assert await crud.get_group_members(db_session, 100) == []
+    assert await crud.get_group_members(db_session, 200) == []
+    assert await db_session.get(User, 1) is None
+
+
+async def test_delete_user_reports_false_for_an_unknown_user(db_session: AsyncSession) -> None:
+    assert await crud.delete_user(db_session, 999) is False
 
 
 async def test_notify_recipients_are_scoped_to_group_and_role(db_session: AsyncSession) -> None:

@@ -1,3 +1,4 @@
+import contextlib
 from datetime import datetime, timedelta
 
 from aiogram import F, Router
@@ -85,22 +86,38 @@ async def on_bot_added_to_group(event: ChatMemberUpdated) -> None:
 
 @router.my_chat_member(ChatMemberUpdatedFilter(member_status_changed=LEAVE_TRANSITION))
 async def on_bot_removed_from_group(event: ChatMemberUpdated) -> None:
-    """Прибирає групу з нашої БД, коли бот перестає бути її учасником.
+    """Реагує на видалення бота — з групи чи (блокування) в особистих.
 
-    LEAVE_TRANSITION (member-like -> left/kicked) покриває і явний кік
-    бота з групи, і повне видалення самої групи в Telegram — в обох
-    випадках Telegram надсилає боту цю саму транзицію для chat_id групи.
-    Без бота в чаті ми однаково більше не можемо стежити за повідомленнями
-    чи нагадуваннями, тож застарілий запис сенсу тримати немає (а якщо
-    Telegram колись перевикористає цей chat_id для нової групи — краще,
-    щоб старого запису вже не було).
+    LEAVE_TRANSITION (member-like -> left/kicked) покриває обидва випадки —
+    Bot API надсилає боту той самий апдейт `my_chat_member`, різниться лише
+    `event.chat.type`:
+
+    - Групи/супергрупи: і явний кік бота з групи, і повне видалення самої
+      групи в Telegram. Без бота в чаті ми однаково більше не можемо
+      стежити за повідомленнями чи нагадуваннями, тож застарілий запис
+      сенсу тримати немає (а якщо Telegram колись перевикористає цей
+      chat_id для нової групи — краще, щоб старого запису вже не було).
+    - Особисті: людина натиснула "Зупинити та заблокувати бота". На
+      відміну від виходу з групи (де можливий випадковий клік чи технічний
+      збій на боці Telegram), заблокувати бота в приваті можна лише
+      окремою явною дією через системне меню чату — це усвідомлений крок,
+      тож трактуємо це як самостійне звільнення співробітника:
+      `group_service.offboard_staff` кидає з усіх поточних груп і видаляє
+      рядок `users` повністю. Це єдиний спосіб звільнення — керівник не
+      може зробити це за когось іншого (жодного окремого API для цього
+      немає). `StaffNotFoundError` просто ігноруємо — заблокувати бота
+      може будь-хто (клієнт, випадковий співрозмовник), а не лише
+      зареєстрований співробітник.
     """
-    if event.chat.type not in ("group", "supergroup"):
+    if event.chat.type in ("group", "supergroup"):
+        async with async_session() as session:
+            await crud.delete_group(session, event.chat.id)
+            await session.commit()
         return
 
-    async with async_session() as session:
-        await crud.delete_group(session, event.chat.id)
-        await session.commit()
+    if event.chat.type == "private":
+        with contextlib.suppress(group_service.StaffNotFoundError):
+            await group_service.offboard_staff(event.chat.id)
 
 
 @router.chat_member(ChatMemberUpdatedFilter(member_status_changed=JOIN_TRANSITION))
@@ -126,6 +143,26 @@ async def on_member_joined_group(event: ChatMemberUpdated) -> None:
 
     if tag is not None:
         await group_service.sync_tag_to_telegram(event.chat.id, event.new_chat_member.user.id, tag)
+
+
+@router.chat_member(ChatMemberUpdatedFilter(member_status_changed=LEAVE_TRANSITION))
+async def on_member_left_group(event: ChatMemberUpdated) -> None:
+    """Прибирає учасника (тег) з групи, коли він сам вийшов або його кікнули.
+
+    Дзеркальний обробник до `on_member_joined_group` вище, але для протилежної
+    транзиції: без нього рядок `GroupMember` для такого користувача лишався
+    б назавжди — /tag і Mini App продовжували б показувати його як
+    учасника групи, хоча в самому Telegram-чаті його вже нема. Прибирає лише
+    сам тег/членство — саму групу видаляти не треба (це робить окремо
+    `on_bot_removed_from_group`, коли з чату видаляють самого бота).
+    """
+    if event.chat.type not in ("group", "supergroup"):
+        return
+
+    async with async_session() as session:
+        removed = await crud.remove_member(session, event.chat.id, event.old_chat_member.user.id)
+        if removed:
+            await session.commit()
 
 
 @router.message(Command("register"), F.chat.type.in_({"group", "supergroup"}))

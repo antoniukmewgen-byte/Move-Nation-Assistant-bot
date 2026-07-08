@@ -12,7 +12,8 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from app.bot.handlers import messages as messages_handlers
 from app.db import crud
-from app.db.models import Base, GroupStatus
+from app.db.models import Base, GroupStatus, Role
+from app.services import group_service
 from tests.bot_fakes import FakeChat, FakeMessage, FakeUser
 
 pytestmark = pytest.mark.asyncio
@@ -24,6 +25,24 @@ class FakeBot:
 
     async def send_message(self, chat_id: int, text: str, **_kwargs: Any) -> None:
         self.sent.append((chat_id, text))
+
+
+class FakeGroupServiceBot:
+    """Stubs `group_service.bot` for the blocked-in-private -> offboard_staff path.
+
+    See `tests/test_users_routes.py::FakeBot` — same shape, duplicated here
+    rather than shared since these tests live in a different module.
+    """
+
+    def __init__(self) -> None:
+        self.banned: list[tuple[int, int]] = []
+        self.unbanned: list[tuple[int, int]] = []
+
+    async def ban_chat_member(self, chat_id: int, user_id: int, **_kwargs: Any) -> None:
+        self.banned.append((chat_id, user_id))
+
+    async def unban_chat_member(self, chat_id: int, user_id: int, **_kwargs: Any) -> None:
+        self.unbanned.append((chat_id, user_id))
 
 
 class FakeReminders:
@@ -55,6 +74,11 @@ async def _patch_db(monkeypatch: pytest.MonkeyPatch):
         await conn.run_sync(Base.metadata.create_all)
     sessionmaker = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
     monkeypatch.setattr(messages_handlers, "async_session", sessionmaker)
+    # on_bot_removed_from_group delegates the "blocked in private" case to
+    # group_service.offboard_staff, which owns its own async_session
+    # reference — must be patched too, or it would fall through to the real
+    # (file-based) database.
+    monkeypatch.setattr(group_service, "async_session", sessionmaker)
     yield sessionmaker
     await engine.dispose()
 
@@ -152,17 +176,50 @@ async def test_on_bot_removed_from_group_deletes_the_record(_patch_db) -> None:
         assert await crud.get_group(session, 100) is None
 
 
-async def test_on_bot_removed_from_group_ignores_private_chats(_patch_db) -> None:
+async def test_on_bot_removed_from_group_offboards_a_staff_member_who_blocked_the_bot(
+    _patch_db, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Private chat_id == the user's own id (Bot API) — blocking the bot in
+    # personal messages is a deliberate action (unlike leaving a group, which
+    # can happen by accident), so it's treated as self-offboarding: kicked
+    # from every group they're currently tagged in, and their `users` row
+    # deleted entirely — same end state as a Керівник calling
+    # POST /users/{id}/offboard (app/api/routes/users.py).
     async with _patch_db() as session:
-        await crud.create_group_record(session, 1, "Not a group", created_by_userbot=False)
+        await crud.get_or_create_user(session, 2, "bob", "Bob B.")
+        await crud.set_user_role(session, 2, Role.TEAMLEAD)
+        await crud.create_group_record(session, 100, "Team Chat", created_by_userbot=True)
+        await crud.add_member_tag(session, 100, 2, Role.TEAMLEAD.value)
         await session.commit()
 
-    event = SimpleNamespace(chat=FakeChat(id=1, type="private"))
+    fake_bot = FakeGroupServiceBot()
+    monkeypatch.setattr(group_service, "bot", fake_bot)
+
+    event = SimpleNamespace(chat=FakeChat(id=2, type="private"))
 
     await messages_handlers.on_bot_removed_from_group(event)
 
+    assert fake_bot.banned == [(100, 2)]
     async with _patch_db() as session:
-        assert await crud.get_group(session, 1) is not None
+        assert await crud.get_group_members(session, 100) == []
+        from app.db.models import User
+
+        assert await session.get(User, 2) is None
+
+
+async def test_on_bot_removed_from_group_is_a_noop_when_a_non_staff_user_blocks_the_bot(
+    _patch_db, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Anyone can block the bot in personal messages — a client, a stranger who
+    # never registered — not just staff. Must not raise or affect anything.
+    fake_bot = FakeGroupServiceBot()
+    monkeypatch.setattr(group_service, "bot", fake_bot)
+
+    event = SimpleNamespace(chat=FakeChat(id=999, type="private"))
+
+    await messages_handlers.on_bot_removed_from_group(event)
+
+    assert fake_bot.banned == []
 
 
 async def test_on_bot_removed_from_group_is_a_noop_for_unregistered_group(_patch_db) -> None:
@@ -172,6 +229,60 @@ async def test_on_bot_removed_from_group_is_a_noop_for_unregistered_group(_patch
 
     async with _patch_db() as session:
         assert await crud.get_group(session, 999) is None
+
+
+# --- on_member_left_group ----------------------------------------------------
+
+
+async def test_on_member_left_group_removes_the_member(_patch_db) -> None:
+    async with _patch_db() as session:
+        await crud.create_group_record(session, 100, "Team Chat", created_by_userbot=False)
+        await crud.add_member_tag(session, 100, 2, "Клієнт")
+        await session.commit()
+
+    event = SimpleNamespace(
+        chat=FakeChat(id=100, type="supergroup"),
+        old_chat_member=SimpleNamespace(user=SimpleNamespace(id=2)),
+    )
+
+    await messages_handlers.on_member_left_group(event)
+
+    async with _patch_db() as session:
+        assert await crud.get_group_members(session, 100) == []
+
+
+async def test_on_member_left_group_ignores_private_chats(_patch_db) -> None:
+    async with _patch_db() as session:
+        await crud.create_group_record(session, 1, "Not a group", created_by_userbot=False)
+        await crud.add_member_tag(session, 1, 2, "Клієнт")
+        await session.commit()
+
+    event = SimpleNamespace(
+        chat=FakeChat(id=1, type="private"),
+        old_chat_member=SimpleNamespace(user=SimpleNamespace(id=2)),
+    )
+
+    await messages_handlers.on_member_left_group(event)
+
+    async with _patch_db() as session:
+        members = await crud.get_group_members(session, 1)
+        assert [m.user_id for m in members] == [2]
+
+
+async def test_on_member_left_group_is_a_noop_for_an_untracked_member(_patch_db) -> None:
+    async with _patch_db() as session:
+        await crud.create_group_record(session, 100, "Team Chat", created_by_userbot=False)
+        await session.commit()
+
+    event = SimpleNamespace(
+        chat=FakeChat(id=100, type="supergroup"),
+        old_chat_member=SimpleNamespace(user=SimpleNamespace(id=999)),
+    )
+
+    await messages_handlers.on_member_left_group(event)
+
+    async with _patch_db() as session:
+        assert await crud.get_group_members(session, 100) == []
 
 
 # --- /register ----------------------------------------------------------------

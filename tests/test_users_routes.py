@@ -21,13 +21,13 @@ pytestmark = pytest.mark.asyncio
 
 
 @pytest.fixture(autouse=True)
-async def _patch_db(monkeypatch: pytest.MonkeyPatch) -> None:
+async def _patch_db(monkeypatch: pytest.MonkeyPatch):
     engine = create_async_engine("sqlite+aiosqlite:///:memory:")
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     sessionmaker = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
     monkeypatch.setattr(users_routes, "async_session", sessionmaker)
-    yield
+    yield sessionmaker
     await engine.dispose()
 
 

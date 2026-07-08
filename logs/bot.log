@@ -94,3 +94,27 @@ aiogram.exceptions.TelegramBadRequest: Telegram server says - Bad Request: CHAT_
 2026-07-08 16:48:52,615 | INFO     | aiogram.dispatcher | Start polling
 2026-07-08 16:48:52,692 | INFO     | aiogram.dispatcher | Run polling for bot @MoveNation_Assistant_bot id=8979568031 - 'Move Nation Assistant'
 2026-07-08 16:49:07,742 | INFO     | app.services.group_service | Не можу встановити тег «Керівник» для user_id=8676009145 у групі -1003993627387 — це власник чату, Telegram дозволяє тегувати творця лише йому самому
+2026-07-08 16:50:51,267 | INFO     | aiogram.dispatcher | Polling stopped
+2026-07-08 16:50:51,268 | INFO     | __main__ | Завершую роботу: зупиняю планувальник, бота, API та з'єднання з БД…
+2026-07-08 16:50:51,269 | ERROR    | aiogram.dispatcher | Failed to fetch updates - TelegramNetworkError: HTTP Client says - ServerDisconnectedError: Server disconnected
+2026-07-08 16:50:51,269 | WARNING  | aiogram.dispatcher | Sleep for 1.000000 seconds and try again... (tryings = 0, bot id = 8979568031)
+2026-07-08 16:50:51,270 | INFO     | aiogram.dispatcher | Polling stopped for bot @MoveNation_Assistant_bot id=8979568031 - 'Move Nation Assistant'
+2026-07-08 16:50:51,271 | INFO     | __main__ | Зупинено користувачем.
+2026-07-08 16:58:46,113 | INFO     | aiogram.dispatcher | Start polling
+2026-07-08 16:58:46,206 | INFO     | aiogram.dispatcher | Run polling for bot @MoveNation_Assistant_bot id=8979568031 - 'Move Nation Assistant'
+2026-07-08 16:59:09,513 | INFO     | app.services.group_service | Не можу встановити тег «Керівник» для user_id=8676009145 у групі -1004489186847 — це власник чату, Telegram дозволяє тегувати творця лише йому самому
+2026-07-08 17:00:26,257 | INFO     | aiogram.dispatcher | Polling stopped
+2026-07-08 17:00:26,257 | INFO     | __main__ | Завершую роботу: зупиняю планувальник, бота, API та з'єднання з БД…
+2026-07-08 17:00:26,258 | ERROR    | aiogram.dispatcher | Failed to fetch updates - TelegramNetworkError: HTTP Client says - ServerDisconnectedError: Server disconnected
+2026-07-08 17:00:26,258 | WARNING  | aiogram.dispatcher | Sleep for 1.000000 seconds and try again... (tryings = 0, bot id = 8979568031)
+2026-07-08 17:00:26,260 | INFO     | aiogram.dispatcher | Polling stopped for bot @MoveNation_Assistant_bot id=8979568031 - 'Move Nation Assistant'
+2026-07-08 17:00:26,261 | INFO     | __main__ | Зупинено користувачем.
+2026-07-08 18:48:52,618 | INFO     | aiogram.dispatcher | Start polling
+2026-07-08 18:48:52,702 | INFO     | aiogram.dispatcher | Run polling for bot @MoveNation_Assistant_bot id=8979568031 - 'Move Nation Assistant'
+2026-07-08 18:49:34,935 | INFO     | app.services.group_service | Не можу встановити тег «Керівник» для user_id=8676009145 у групі -1004387009337 — це власник чату, Telegram дозволяє тегувати творця лише йому самому
+2026-07-08 18:53:58,865 | INFO     | aiogram.dispatcher | Polling stopped
+2026-07-08 18:53:58,866 | INFO     | __main__ | Завершую роботу: зупиняю планувальник, бота, API та з'єднання з БД…
+2026-07-08 18:53:58,867 | ERROR    | aiogram.dispatcher | Failed to fetch updates - TelegramNetworkError: HTTP Client says - ServerDisconnectedError: Server disconnected
+2026-07-08 18:53:58,867 | WARNING  | aiogram.dispatcher | Sleep for 1.000000 seconds and try again... (tryings = 0, bot id = 8979568031)
+2026-07-08 18:53:58,869 | INFO     | aiogram.dispatcher | Polling stopped for bot @MoveNation_Assistant_bot id=8979568031 - 'Move Nation Assistant'
+2026-07-08 18:53:58,871 | INFO     | __main__ | Зупинено користувачем.

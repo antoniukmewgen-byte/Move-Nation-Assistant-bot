@@ -120,6 +120,10 @@ class AddClientFailedError(GroupServiceError):
     """Wraps an unexpected (already-logged) failure from the Telegram-side add-client call."""
 
 
+class StaffNotFoundError(GroupServiceError):
+    """No user row exists for the given user_id — nothing to offboard."""
+
+
 async def create_group(user_id: int, title: str) -> Group:
     """Creates a group in Telegram (via the user's own session) and records it.
 
@@ -229,3 +233,53 @@ async def add_client(user_id: int, group_id: int, identifier: str) -> tuple[int,
         await sync_tag_to_telegram(group_id, client_user_id, CLIENT_TAG)
 
     return client_user_id, invite_link
+
+
+async def offboard_staff(user_id: int) -> int:
+    """Звільняє співробітника: прибирає його з усіх груп, де він зараз
+    затегований, і повністю видаляє з БД (роль, /connect-сесію, усі теги).
+
+    На відміну від "вийшов/його кікнули з однієї групи"
+    (app/bot/handlers/messages.py::on_member_left_group) — той випадок
+    стосується лише конкретного чату й нічого не каже про глобальний статус
+    людини в компанії. Звільнення — навпаки, одразу закриває всі групи разом
+    і прибирає людину зі "стартового складу" (`crud.get_staff_users`) для
+    будь-яких НОВИХ груп, які будуть створені після цього. Єдиний спосіб це
+    викликати — сама людина блокує бота в особистих
+    (app/bot/handlers/messages.py::on_bot_removed_from_group, приватна
+    гілка): жодного окремого API, яким хтось інший міг би звільнити
+    співробітника, немає.
+
+    Кік із кожної групи — best-effort і не блокує рештку: якщо бот не адмін
+    у якійсь конкретній групі (наприклад, зареєстрованій через /register, а
+    не створеній через застосунок) чи людини там уже нема, це не має заважати
+    прибрати її зі решти груп і з самої БД — сенс дії саме в тому, щоб вона
+    перестала бути співробітником, незалежно від нюансів однієї групи.
+
+    Кидає :class:`StaffNotFoundError`, якщо такого user_id взагалі нема в
+    БД. Повертає кількість груп, з яких людину прибрано.
+    """
+    async with async_session() as session:
+        groups = await crud.get_groups_for_user(session, user_id)
+
+    for group in groups:
+        try:
+            await bot.ban_chat_member(group.id, user_id)
+            await bot.unban_chat_member(group.id, user_id, only_if_banned=True)
+        except TelegramBadRequest:
+            logger.warning(
+                "Не вдалося видалити user_id=%s з групи %s під час звільнення "
+                "(бот не адмін у цьому чаті чи учасника вже нема)",
+                user_id,
+                group.id,
+                exc_info=True,
+            )
+
+    async with async_session() as session:
+        deleted = await crud.delete_user(session, user_id)
+        await session.commit()
+
+    if not deleted:
+        raise StaffNotFoundError()
+
+    return len(groups)
