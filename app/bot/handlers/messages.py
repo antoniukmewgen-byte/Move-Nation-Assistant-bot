@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from aiogram import F, Router
 from aiogram.exceptions import TelegramBadRequest, TelegramMigrateToChat
@@ -7,10 +7,11 @@ from aiogram.filters.chat_member_updated import JOIN_TRANSITION, LEAVE_TRANSITIO
 from aiogram.types import ChatMemberUpdated, Message
 
 from app.bot.guards import require_text, require_user
+from app.config import settings
 from app.db import crud
 from app.db.models import GroupStatus
 from app.db.session import async_session
-from app.services import group_service
+from app.services import group_service, reminders
 
 router = Router()
 
@@ -157,6 +158,16 @@ async def cmd_tag(message: Message) -> None:
 
 @router.message(F.chat.type.in_({"group", "supergroup"}), F.text, ~F.text.startswith("/"))
 async def track_group_message(message: Message) -> None:
+    """Стежить за станом "очікує відповіді" й (пере)планує нагадування для групи.
+
+    Прив'язка нагадування — до часу *цього* повідомлення клієнта
+    (`message.date`), а не до моменту старту процесу чи наступного тіку
+    планувальника: `reminders.schedule_group_reminder` ставить job рівно на
+    `message.date + інтервал`, з `replace_existing=True` — тож повторне
+    повідомлення клієнта до того, як спрацювало попереднє нагадування, просто
+    зсуває той самий job, а не плодить паралельні (див. reminders.py).
+    Відповідь співробітника знімає job зовсім — клієнта більше не чекають.
+    """
     async with async_session() as session:
         group = await crud.get_group(session, message.chat.id)
         if group is None:
@@ -166,10 +177,15 @@ async def track_group_message(message: Message) -> None:
         sender_is_client = await crud.is_client(session, message.chat.id, sender.id)
 
         if sender_is_client:
-            await crud.mark_awaiting_response(
-                session, message.chat.id, sender.id, message.date or datetime.utcnow()
-            )
+            message_at = message.date or datetime.utcnow()
+            await crud.mark_awaiting_response(session, message.chat.id, sender.id, message_at)
         else:
             await crud.clear_awaiting_response(session, message.chat.id)
 
         await session.commit()
+
+    if sender_is_client:
+        interval = timedelta(minutes=settings.reminder_interval_minutes)
+        reminders.schedule_group_reminder(message.chat.id, message_at + interval)
+    else:
+        reminders.cancel_group_reminder(message.chat.id)

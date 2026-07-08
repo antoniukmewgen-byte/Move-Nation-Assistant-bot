@@ -4,7 +4,6 @@ import logging
 import uvicorn
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.types import MenuButtonWebApp, WebAppInfo
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from app.api.app import api
 from app.bot.bot_instance import bot, dp
@@ -12,7 +11,8 @@ from app.bot.handlers import add_client, connect, group_creation, messages, star
 from app.config import settings
 from app.db.session import engine
 from app.logging_config import setup_logging
-from app.services.reminders import send_reminders
+from app.services.reminders import recover_pending_reminders
+from app.services.scheduler import scheduler
 
 setup_logging(settings.log_level)
 logger = logging.getLogger(__name__)
@@ -57,9 +57,11 @@ async def main() -> None:
     # add `workers=` to the uvicorn.Config below or run this under a
     # multi-replica orchestrator without first moving both of those to
     # shared storage.
-    scheduler = AsyncIOScheduler()
-    scheduler.add_job(send_reminders, "interval", minutes=settings.reminder_interval_minutes)
     scheduler.start()
+    # Job'и APScheduler живуть лише в пам'яті — після рестарту процесу
+    # перевстановлюємо нагадування для груп, які вже чекали на відповідь
+    # (див. app/services/reminders.py::recover_pending_reminders).
+    await recover_pending_reminders()
 
     await _configure_menu_button()
 

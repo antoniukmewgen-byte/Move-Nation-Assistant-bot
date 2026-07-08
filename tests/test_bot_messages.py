@@ -3,7 +3,7 @@ bot-added-to-group registration, `/register`, `/tag`, and the passive
 awaiting-response tracker on every non-command group message.
 """
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from types import SimpleNamespace
 from typing import Any
 
@@ -26,6 +26,28 @@ class FakeBot:
         self.sent.append((chat_id, text))
 
 
+class FakeReminders:
+    """Stubs `reminders.schedule_group_reminder`/`cancel_group_reminder`.
+
+    `track_group_message` (app/bot/handlers/messages.py) now drives per-group
+    APScheduler jobs through the real `app.services.reminders` module (which
+    itself talks to the shared, un-started-in-tests `app.services.scheduler`
+    singleton). Stubbing it here keeps these tests focused on the DB-state
+    transition it's responsible for and lets us assert *what* it asked the
+    scheduler to do without depending on APScheduler internals.
+    """
+
+    def __init__(self) -> None:
+        self.scheduled: list[tuple[int, datetime]] = []
+        self.cancelled: list[int] = []
+
+    def schedule_group_reminder(self, group_id: int, run_at: datetime) -> None:
+        self.scheduled.append((group_id, run_at))
+
+    def cancel_group_reminder(self, group_id: int) -> None:
+        self.cancelled.append(group_id)
+
+
 @pytest.fixture(autouse=True)
 async def _patch_db(monkeypatch: pytest.MonkeyPatch):
     engine = create_async_engine("sqlite+aiosqlite:///:memory:")
@@ -35,6 +57,13 @@ async def _patch_db(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(messages_handlers, "async_session", sessionmaker)
     yield sessionmaker
     await engine.dispose()
+
+
+@pytest.fixture(autouse=True)
+def _patch_reminders(monkeypatch: pytest.MonkeyPatch) -> FakeReminders:
+    fake_reminders = FakeReminders()
+    monkeypatch.setattr(messages_handlers, "reminders", fake_reminders)
+    return fake_reminders
 
 
 # --- on_bot_added_to_group ---------------------------------------------------
@@ -205,7 +234,7 @@ async def test_cmd_tag_tags_the_replied_to_user(_patch_db, monkeypatch: pytest.M
 # --- passive tracker --------------------------------------------------------
 
 
-async def test_track_group_message_ignores_unregistered_group(_patch_db) -> None:
+async def test_track_group_message_ignores_unregistered_group(_patch_db, _patch_reminders) -> None:
     message = FakeMessage(
         chat=FakeChat(id=100, type="group"), from_user=FakeUser(id=1), text="hello", date=datetime.utcnow()
     )
@@ -214,20 +243,23 @@ async def test_track_group_message_ignores_unregistered_group(_patch_db) -> None
 
     async with _patch_db() as session:
         assert await crud.get_group(session, 100) is None
+    assert _patch_reminders.scheduled == []
+    assert _patch_reminders.cancelled == []
 
 
-async def test_track_group_message_from_client_marks_awaiting_response(_patch_db) -> None:
+async def test_track_group_message_from_client_marks_awaiting_response(_patch_db, _patch_reminders) -> None:
     async with _patch_db() as session:
         await crud.get_or_create_user(session, 2, "client", "Client C.")
         await crud.create_group_record(session, 100, "Team Chat", created_by_userbot=False)
         await crud.add_member_tag(session, 100, 2, "Клієнт")
         await session.commit()
 
+    message_date = datetime.utcnow()
     message = FakeMessage(
         chat=FakeChat(id=100, type="group"),
         from_user=FakeUser(id=2),
         text="hello",
-        date=datetime.utcnow(),
+        date=message_date,
     )
 
     await messages_handlers.track_group_message(message)
@@ -238,8 +270,18 @@ async def test_track_group_message_from_client_marks_awaiting_response(_patch_db
         assert group.awaiting_response is True
         assert group.last_message_from_id == 2
 
+    # Reminder must be tied to *this* message's own timestamp (message_date +
+    # interval), not to whenever a scheduler tick happens to land — that's
+    # the whole point of the per-group scheduling this replaced.
+    from app.config import settings
 
-async def test_track_group_message_from_staff_clears_awaiting_response(_patch_db) -> None:
+    assert _patch_reminders.scheduled == [
+        (100, message_date + timedelta(minutes=settings.reminder_interval_minutes))
+    ]
+    assert _patch_reminders.cancelled == []
+
+
+async def test_track_group_message_from_staff_clears_awaiting_response(_patch_db, _patch_reminders) -> None:
     async with _patch_db() as session:
         await crud.get_or_create_user(session, 1, "alice", "Alice A.")
         group = await crud.create_group_record(session, 100, "Team Chat", created_by_userbot=False)
@@ -260,3 +302,5 @@ async def test_track_group_message_from_staff_clears_awaiting_response(_patch_db
         group = await crud.get_group(session, 100)
         assert group is not None
         assert group.awaiting_response is False
+    assert _patch_reminders.cancelled == [100]
+    assert _patch_reminders.scheduled == []

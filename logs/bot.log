@@ -69,3 +69,16 @@ aiogram.exceptions.TelegramBadRequest: Telegram server says - Bad Request: CHAT_
 2026-07-08 15:00:56,087 | WARNING  | aiogram.dispatcher | Sleep for 1.000000 seconds and try again... (tryings = 0, bot id = 8979568031)
 2026-07-08 15:00:56,088 | INFO     | aiogram.dispatcher | Polling stopped for bot @MoveNation_Assistant_bot id=8979568031 - 'Move Nation Assistant'
 2026-07-08 15:00:56,090 | INFO     | __main__ | Зупинено користувачем.
+2026-07-08 15:43:35,213 | INFO     | aiogram.dispatcher | Start polling
+2026-07-08 15:43:35,303 | INFO     | aiogram.dispatcher | Run polling for bot @MoveNation_Assistant_bot id=8979568031 - 'Move Nation Assistant'
+2026-07-08 15:44:33,529 | INFO     | app.services.group_service | Не можу встановити тег «Керівник» для user_id=8676009145 у групі -1004474394235 — це власник чату, Telegram дозволяє тегувати творця лише йому самому
+2026-07-08 16:07:50,155 | INFO     | aiogram.dispatcher | Polling stopped
+2026-07-08 16:07:50,156 | INFO     | __main__ | Завершую роботу: зупиняю планувальник, бота, API та з'єднання з БД…
+2026-07-08 16:07:50,157 | ERROR    | aiogram.dispatcher | Failed to fetch updates - TelegramNetworkError: HTTP Client says - ServerDisconnectedError: Server disconnected
+2026-07-08 16:07:50,158 | WARNING  | aiogram.dispatcher | Sleep for 1.000000 seconds and try again... (tryings = 0, bot id = 8979568031)
+2026-07-08 16:07:50,160 | INFO     | aiogram.dispatcher | Polling stopped for bot @MoveNation_Assistant_bot id=8979568031 - 'Move Nation Assistant'
+2026-07-08 16:07:50,163 | INFO     | __main__ | Зупинено користувачем.
+2026-07-08 16:10:45,225 | INFO     | aiogram.dispatcher | Start polling
+2026-07-08 16:10:45,304 | INFO     | aiogram.dispatcher | Run polling for bot @MoveNation_Assistant_bot id=8979568031 - 'Move Nation Assistant'
+2026-07-08 16:11:24,540 | INFO     | app.services.telethon_auth | Код надіслано для user_id=8422370073: type=SentCodeTypeApp next_type=None timeout=None
+2026-07-08 16:12:01,356 | INFO     | app.services.group_service | Не можу встановити тег «Керівник» для user_id=8676009145 у групі -1004439858227 — це власник чату, Telegram дозволяє тегувати творця лише йому самому
