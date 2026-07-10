@@ -37,3 +37,60 @@
 2026-07-08 20:41:23,724 | WARNING  | aiogram.dispatcher | Sleep for 1.000000 seconds and try again... (tryings = 0, bot id = 8979568031)
 2026-07-08 20:41:23,726 | INFO     | aiogram.dispatcher | Polling stopped for bot @MoveNation_Assistant_bot id=8979568031 - 'Move Nation Assistant'
 2026-07-08 20:41:23,727 | INFO     | __main__ | Зупинено користувачем.
+2026-07-10 17:47:20,415 | INFO     | aiogram.dispatcher | Start polling
+2026-07-10 17:47:20,512 | INFO     | aiogram.dispatcher | Run polling for bot @MoveNation_Assistant_bot id=8979568031 - 'Move Nation Assistant'
+2026-07-10 17:47:50,345 | WARNING  | app.services.group_service | Не вдалося видалити user_id=8676009145 з групи -1004371761940 під час звільнення (бот не адмін у цьому чаті чи учасника вже нема)
+Traceback (most recent call last):
+  File "D:\GitHub\Move-Nation-Assistant-bot\app\services\group_service.py", line 283, in offboard_staff
+    await bot.ban_chat_member(group.id, user_id)
+  File "D:\GitHub\Move-Nation-Assistant-bot\.venv\Lib\site-packages\aiogram\client\bot.py", line 761, in ban_chat_member
+    return await self(call, request_timeout=request_timeout)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\GitHub\Move-Nation-Assistant-bot\.venv\Lib\site-packages\aiogram\client\bot.py", line 509, in __call__
+    return await self.session(self, method, timeout=request_timeout)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\GitHub\Move-Nation-Assistant-bot\.venv\Lib\site-packages\aiogram\client\session\base.py", line 259, in __call__
+    return cast(TelegramType, await middleware(bot, method))
+                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\GitHub\Move-Nation-Assistant-bot\.venv\Lib\site-packages\aiogram\client\session\aiohttp.py", line 177, in make_request
+    response = self.check_response(
+               ^^^^^^^^^^^^^^^^^^^^
+  File "D:\GitHub\Move-Nation-Assistant-bot\.venv\Lib\site-packages\aiogram\client\session\base.py", line 121, in check_response
+    raise TelegramBadRequest(method=method, message=description)
+aiogram.exceptions.TelegramBadRequest: Telegram server says - Bad Request: can't remove chat owner
+2026-07-10 17:49:24,269 | INFO     | app.services.telethon_auth | Код надіслано для user_id=8676009145: type=SentCodeTypeApp next_type=None timeout=None
+2026-07-10 17:53:45,748 | INFO     | aiogram.dispatcher | Polling stopped
+2026-07-10 17:53:45,748 | INFO     | __main__ | Завершую роботу: зупиняю планувальник, бота, API та з'єднання з БД…
+2026-07-10 17:53:45,750 | ERROR    | aiogram.dispatcher | Failed to fetch updates - TelegramNetworkError: HTTP Client says - ServerDisconnectedError: Server disconnected
+2026-07-10 17:53:45,750 | WARNING  | aiogram.dispatcher | Sleep for 1.000000 seconds and try again... (tryings = 0, bot id = 8979568031)
+2026-07-10 17:53:45,752 | INFO     | aiogram.dispatcher | Polling stopped for bot @MoveNation_Assistant_bot id=8979568031 - 'Move Nation Assistant'
+2026-07-10 17:53:45,753 | INFO     | __main__ | Зупинено користувачем.
+2026-07-10 17:59:18,619 | INFO     | aiogram.dispatcher | Start polling
+2026-07-10 17:59:18,718 | INFO     | aiogram.dispatcher | Run polling for bot @MoveNation_Assistant_bot id=8979568031 - 'Move Nation Assistant'
+2026-07-10 18:00:29,116 | INFO     | app.services.telethon_auth | Код надіслано для user_id=8676009145: type=SentCodeTypeApp next_type=None timeout=None
+2026-07-10 18:01:03,531 | INFO     | app.services.telethon_auth | Код надіслано для user_id=8676009145: type=SentCodeTypeApp next_type=None timeout=None
+2026-07-10 18:01:23,014 | INFO     | app.services.group_service | Не можу встановити тег «Керівник» для user_id=8676009145 у групі -1003970986792 — це власник чату, Telegram дозволяє тегувати творця лише йому самому
+2026-07-10 18:01:46,936 | INFO     | app.services.group_service | Не можу встановити тег «Менеджер» для user_id=8676009145 у групі -1003970986792 — це власник чату, Telegram дозволяє тегувати творця лише йому самому
+2026-07-10 18:51:11,137 | INFO     | aiogram.dispatcher | Start polling
+2026-07-10 18:51:11,212 | INFO     | aiogram.dispatcher | Run polling for bot @MoveNation_Assistant_bot id=8979568031 - 'Move Nation Assistant'
+2026-07-10 18:51:46,062 | WARNING  | app.services.group_service | Не вдалося видалити user_id=8676009145 з групи -1003970986792 під час звільнення (бот не адмін у цьому чаті чи учасника вже нема)
+Traceback (most recent call last):
+  File "D:\GitHub\Move-Nation-Assistant-bot\app\services\group_service.py", line 283, in offboard_staff
+    await bot.ban_chat_member(group.id, user_id)
+  File "D:\GitHub\Move-Nation-Assistant-bot\.venv\Lib\site-packages\aiogram\client\bot.py", line 761, in ban_chat_member
+    return await self(call, request_timeout=request_timeout)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\GitHub\Move-Nation-Assistant-bot\.venv\Lib\site-packages\aiogram\client\bot.py", line 509, in __call__
+    return await self.session(self, method, timeout=request_timeout)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\GitHub\Move-Nation-Assistant-bot\.venv\Lib\site-packages\aiogram\client\session\base.py", line 259, in __call__
+    return cast(TelegramType, await middleware(bot, method))
+                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\GitHub\Move-Nation-Assistant-bot\.venv\Lib\site-packages\aiogram\client\session\aiohttp.py", line 177, in make_request
+    response = self.check_response(
+               ^^^^^^^^^^^^^^^^^^^^
+  File "D:\GitHub\Move-Nation-Assistant-bot\.venv\Lib\site-packages\aiogram\client\session\base.py", line 121, in check_response
+    raise TelegramBadRequest(method=method, message=description)
+aiogram.exceptions.TelegramBadRequest: Telegram server says - Bad Request: can't remove chat owner
+2026-07-10 18:52:38,185 | INFO     | app.services.telethon_auth | Код надіслано для user_id=8676009145: type=SentCodeTypeApp next_type=None timeout=None
+2026-07-10 18:54:45,523 | INFO     | app.services.group_service | Не можу встановити тег «Керівник» для user_id=8676009145 у групі -1003911879846 — це власник чату, Telegram дозволяє тегувати творця лише йому самому

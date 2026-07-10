@@ -1,30 +1,12 @@
 import { apiFetch, safeJson } from "./api.js";
-import { enterMainApp } from "./mainApp.js";
-import { renderOnboardingProgress, markPasswordStepNeeded } from "./progress.js";
+import { setupStepForm } from "./step-form.js";
+import { goToStep, finishRegistration } from "./onboarding.js";
+import { markPasswordStepNeeded } from "./progress.js";
 
-// --- Account connect: phone -> code -> (optional) 2FA password ---
-
-export function resetConnectStep() {
-  document.getElementById("connect-phone-form").hidden = false;
-  document.getElementById("connect-code-form").hidden = true;
-  document.getElementById("connect-password-form").hidden = true;
-  setActiveStep("phone");
-  setConnectStatus("");
-}
-
-// Drives both the dot strip and the "Крок N з M" eyebrow text from the same
-// shared step list as role-step (see progress.js), so the counter continues
-// from where role-step left off (role = step 1) instead of restarting at 1.
-function setActiveStep(stepName) {
-  renderOnboardingProgress(stepName, "connect-step-eyebrow", ["dot-role", "dot-phone", "dot-code", "dot-password"]);
-}
-
-function setConnectStatus(text, variant = "muted") {
-  const el = document.getElementById("connect-status");
-  el.textContent = text;
-  el.classList.toggle("ok", variant === "ok");
-  el.classList.toggle("error", variant === "error");
-}
+// --- Account connect: phone -> code -> (optional) 2FA password, as steps
+// 2-4 of the unified #role-step stepper (see onboarding.js). Each form uses
+// DESIGN's setupStepForm (busy state + input-error display), with
+// submitAction doing the real request instead of DESIGN's wait(ms) mock. ---
 
 // Accepts common ways people actually type a Ukrainian mobile number —
 // `+380501234567`, `380501234567`, `0501234567`, or just `501234567` — and
@@ -38,82 +20,86 @@ function normalizePhone(raw) {
   return raw.startsWith("+") ? raw : `+${digits}`;
 }
 
-const phoneInput = document.getElementById("phone-input");
-const phoneSubmitBtn = document.getElementById("phone-submit-btn");
-phoneSubmitBtn.addEventListener("click", async () => {
-  const rawPhone = phoneInput.value.trim();
-  if (!rawPhone) return;
-  const phone = normalizePhone(rawPhone);
-
-  phoneSubmitBtn.disabled = true;
-  setConnectStatus("Надсилаю код…");
-  const res = await apiFetch("/auth/phone", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ phone }),
-  });
-  const data = await safeJson(res);
-
-  if (data.status === "code_sent") {
-    document.getElementById("connect-phone-form").hidden = true;
-    document.getElementById("connect-code-form").hidden = false;
-    setActiveStep("code");
-    setConnectStatus("Код надіслано в Telegram — введи його нижче.", "ok");
-  } else {
-    phoneSubmitBtn.disabled = false;
-    setConnectStatus(data.error || "Помилка. Спробуй ще раз.", "error");
-  }
-});
-
-const codeInput = document.getElementById("code-input");
-const codeSubmitBtn = document.getElementById("code-submit-btn");
-codeSubmitBtn.addEventListener("click", async () => {
-  const code = codeInput.value.trim();
-  if (!code) return;
-
-  codeSubmitBtn.disabled = true;
-  setConnectStatus("Перевіряю код…");
-  const res = await apiFetch("/auth/code", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ code }),
-  });
-  await handleAuthStatus(await safeJson(res), codeSubmitBtn);
-});
-
-const passwordInput = document.getElementById("password-input");
-const passwordSubmitBtn = document.getElementById("password-submit-btn");
-passwordSubmitBtn.addEventListener("click", async () => {
-  const password = passwordInput.value;
-  if (!password) return;
-
-  passwordSubmitBtn.disabled = true;
-  setConnectStatus("Перевіряю пароль…");
-  const res = await apiFetch("/auth/password", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ password }),
-  });
-  await handleAuthStatus(await safeJson(res), passwordSubmitBtn);
-});
-
-async function handleAuthStatus(data, triggeringButton) {
-  if (data.status === "connected") {
-    setConnectStatus("Акаунт підключено!", "ok");
-    const meRes = await apiFetch("/users/me");
-    await enterMainApp(await meRes.json());
-    return;
-  }
-
-  if (data.status === "password_required") {
-    document.getElementById("connect-code-form").hidden = true;
-    document.getElementById("connect-password-form").hidden = false;
-    markPasswordStepNeeded();
-    setActiveStep("password");
-    setConnectStatus("На акаунті ввімкнена двофакторна автентифікація — введи пароль.", "ok");
-    return;
-  }
-
-  triggeringButton.disabled = false;
-  setConnectStatus(data.error || "Помилка. Спробуй ще раз.", "error");
+function isNonEmptyPhone(value) {
+  return value.trim().length > 0;
 }
+
+setupStepForm({
+  inputEl: document.getElementById("phone-input"),
+  submitEl: document.getElementById("phone-submit"),
+  errorEl: document.getElementById("phone-error"),
+  isValid: isNonEmptyPhone,
+  errorMessage: "Введи номер телефону",
+  busyText: "Надсилаю код...",
+  submitAction: async (rawPhone) => {
+    const phone = normalizePhone(rawPhone.trim());
+    const res = await apiFetch("/auth/phone", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ phone }),
+    });
+    const data = await safeJson(res);
+    if (data.status !== "code_sent") {
+      throw new Error(data.error || "Не вдалося надіслати код. Спробуй ще раз.");
+    }
+  },
+  onComplete: () => goToStep(3),
+});
+
+function isNonEmptyCode(value) {
+  return value.trim().length > 0;
+}
+
+setupStepForm({
+  inputEl: document.getElementById("code-input"),
+  submitEl: document.getElementById("code-submit"),
+  errorEl: document.getElementById("code-error"),
+  isValid: isNonEmptyCode,
+  errorMessage: "Введи код із Telegram",
+  busyText: "Підтверджую...",
+  submitAction: async (code) => {
+    const res = await apiFetch("/auth/code", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code: code.trim() }),
+    });
+    const data = await safeJson(res);
+    if (data.status === "connected" || data.status === "password_required") {
+      return data.status;
+    }
+    throw new Error(data.error || "Код невірний. Спробуй ще раз.");
+  },
+  onComplete: (status) => {
+    if (status === "password_required") {
+      markPasswordStepNeeded();
+      goToStep(4);
+    } else {
+      finishRegistration();
+    }
+  },
+});
+
+function isNonEmptyPassword(value) {
+  return value.length > 0;
+}
+
+setupStepForm({
+  inputEl: document.getElementById("password-input"),
+  submitEl: document.getElementById("password-submit"),
+  errorEl: document.getElementById("password-error"),
+  isValid: isNonEmptyPassword,
+  errorMessage: "Введи пароль",
+  busyText: "Перевіряю...",
+  submitAction: async (password) => {
+    const res = await apiFetch("/auth/password", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ password }),
+    });
+    const data = await safeJson(res);
+    if (data.status !== "connected") {
+      throw new Error(data.error || "Пароль невірний. Спробуй ще раз.");
+    }
+  },
+  onComplete: () => finishRegistration(),
+});

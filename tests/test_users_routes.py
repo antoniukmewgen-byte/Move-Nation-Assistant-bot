@@ -60,6 +60,20 @@ async def test_get_me_creates_a_fresh_user_with_no_role_and_not_connected() -> N
     assert me.username == "alice"
     assert me.role is None
     assert me.is_connected is False
+    assert me.phone is None
+
+
+async def test_get_me_reflects_a_phone_persisted_by_a_completed_connect_flow(_patch_db) -> None:
+    # /users/me doesn't set the phone itself — telethon_auth._finish does,
+    # once phone/code(/password) actually succeeds (see test_telethon_auth.py).
+    # This only checks that get_me surfaces whatever crud already stored.
+    async with _patch_db() as session:
+        await crud.get_or_create_user(session, 1, "alice", "Alice A.")
+        await crud.set_user_phone(session, 1, "+380000000")
+        await session.commit()
+
+    me = await users_routes.get_me(user=ALICE)
+    assert me.phone == "+380000000"
 
 
 async def test_set_role_persists_and_is_reflected_by_get_me() -> None:

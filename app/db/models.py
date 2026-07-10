@@ -38,6 +38,12 @@ class User(Base):
     full_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     role: Mapped[Role | None] = mapped_column(SAEnum(Role), nullable=True)
     session_string: Mapped[str | None] = mapped_column(String(2048), nullable=True)
+    # The normalized (+380...) number submitted to /auth/phone, persisted only
+    # once that number has actually completed a successful Telethon login (see
+    # telethon_auth._finish) — not on every code request, so a mistyped/
+    # abandoned attempt never overwrites a previously-connected number with
+    # something unverified.
+    phone: Mapped[str | None] = mapped_column(String(20), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     memberships: Mapped[list["GroupMember"]] = relationship(back_populates="user")

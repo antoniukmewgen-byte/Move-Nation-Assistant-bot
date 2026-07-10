@@ -1,197 +1,232 @@
 <!DOCTYPE html>
 <html lang="uk">
+
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>MoveNation Assistant</title>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" />
   <link rel="stylesheet" href="style.css" />
 </head>
+
 <body>
-  <div id="app">
+  <!-- 1. Завантаження: перший екран, поки /users/me не відповів -->
+  <section class="loading-container center" id="loading" role="status" aria-live="polite" aria-label="Завантаження">
+    <div class="loading-wrap">
+      <div class="logo-mark center">MN</div>
+      <div class="spinner"></div>
+      <p class="loading-text" id="loading-text">Завантаження…</p>
+    </div>
+  </section>
 
-    <!-- 1. Завантаження: перший екран, поки /users/me не відповів -->
-    <section class="top-screen" id="loading">
-      <div class="loading-wrap">
-        <div class="logo-mark">MN</div>
-        <div class="spinner"></div>
-        <p class="loading-text" id="loading-text">Завантаження…</p>
+  <!-- 2. Реєстрація: посада -> телефон -> код -> (опційно) 2FA-пароль,
+       усе одним степером (role-step-card.js/onboarding.js) -->
+  <section class="role-container" id="role-step" aria-label="Реєстрація" hidden>
+    <nav aria-label="Прогрес реєстрації">
+      <div class="stepper-container" id="role-stepper" role="list"></div>
+    </nav>
+
+    <header class="step-header" id="step-header">
+      <h1 id="step-title"></h1>
+      <p class="step-description" id="step-description"></p>
+    </header>
+    <!-- 1 етап -->
+    <div class="step-main" data-step="1" data-title="Посада">
+      <div class="card-container">
+        <div class="role-list" id="role-list" role="radiogroup" aria-label="Посада"></div>
       </div>
-    </section>
-
-    <!-- 2. Вибір посади: показується, поки в користувача немає ролі -->
-    <section class="top-screen" id="role-step" hidden>
-      <div class="hero">
-        <div class="hero-top-row">
-          <button class="back-btn" id="role-step-back-btn" aria-label="Назад до профілю" hidden>
-            <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 6-6 6 6 6"/></svg>
-          </button>
-          <div class="eyebrow" id="role-step-eyebrow">Крок 1 з 3</div>
-        </div>
-        <h1 id="role-step-title">Обери посаду</h1>
-        <p id="role-step-text">Це потрібно один раз — щоб бот знав, хто ти в команді, і показував потрібні функції.</p>
-        <div class="step-dots" id="role-step-dots">
-          <div class="step-dot" id="role-dot-role"></div>
-          <div class="step-dot" id="role-dot-phone"></div>
-          <div class="step-dot" id="role-dot-code"></div>
-          <div class="step-dot" id="role-dot-password" hidden></div>
-        </div>
-      </div>
-      <div class="content">
-        <div class="card">
-          <h2><span class="dot"></span>Посада</h2>
-          <ul class="role-list" id="role-list"></ul>
-        </div>
-      </div>
-    </section>
-
-    <!-- 3. Підключення особистого акаунта: телефон -> код -> (опційно) 2FA -->
-    <section class="top-screen" id="connect-step" hidden>
-      <div class="hero">
-        <div class="eyebrow" id="connect-step-eyebrow">Крок 2 з 3</div>
-        <h1>Підключи акаунт</h1>
-        <p>
-          Потрібно один раз авторизувати твій особистий Telegram, щоб бот міг створювати групи
-          та додавати клієнтів від твого імені.
-        </p>
-        <div class="step-dots">
-          <div class="step-dot" id="dot-role"></div>
-          <div class="step-dot active" id="dot-phone"></div>
-          <div class="step-dot" id="dot-code"></div>
-          <div class="step-dot" id="dot-password" hidden></div>
-        </div>
-      </div>
-      <div class="content">
-        <div class="lock-note">
-          <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="10" width="16" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
-          Сесія зберігається у зашифрованому вигляді і використовується лише для дій, які ти сам ініціюєш через бота.
-        </div>
-
-        <div class="card" id="connect-phone-form">
-          <h2><span class="dot"></span>Номер телефону</h2>
-          <input id="phone-input" type="tel" placeholder="+380XXXXXXXXX" aria-label="Номер телефону" />
-          <button class="primary" id="phone-submit-btn">Надіслати код</button>
-        </div>
-
-        <div class="card" id="connect-code-form" hidden>
-          <h2><span class="dot"></span>Код з Telegram</h2>
-          <input id="code-input" type="text" placeholder="Код підтвердження" aria-label="Код підтвердження" />
-          <button class="primary" id="code-submit-btn">Підтвердити</button>
-        </div>
-
-        <div class="card" id="connect-password-form" hidden>
-          <h2><span class="dot"></span>Пароль (2FA)</h2>
-          <input id="password-input" type="password" placeholder="Пароль двофакторної автентифікації" aria-label="Пароль двофакторної автентифікації" />
-          <button class="primary" id="password-submit-btn">Увійти</button>
-        </div>
-
-        <p class="status-msg" id="connect-status"></p>
-      </div>
-    </section>
-
-    <!-- 4. Головний застосунок: таби «Групи» / «Профіль» + drill-down в групу -->
-    <section class="top-screen" id="main-app" hidden>
-
-      <div class="sub-screen" id="screen-groups">
-        <div class="hero">
-          <div class="eyebrow">MoveNation Assistant</div>
-          <h1>Мої групи</h1>
-        </div>
-        <div class="content">
-          <div class="card">
-            <h2><span class="dot"></span>Створити групу</h2>
-            <input id="group-title" type="text" placeholder="Назва групи" aria-label="Назва групи" />
-            <button class="primary" id="create-group-btn">Створити</button>
-            <p class="status-msg" id="create-status"></p>
-          </div>
-
-          <div class="card">
-            <h2><span class="dot"></span>Активні групи</h2>
-            <ul class="list" id="groups"></ul>
+    </div>
+    <!-- 2 етап -->
+    <div class="flex-fill" data-step="2" data-title="Номер телефону" data-lock-note hidden>
+      <div class="input-box">
+        <div class="card-container">
+          <div class="role-list">
+            <input type="tel" id="phone-input" placeholder="+380ХХХХХХХХХ" aria-label="Номер телефону" inputmode="tel"
+              autocomplete="tel" />
+            <button type="button" class="primary" id="phone-submit">Надіслати код</button>
           </div>
         </div>
+        <span class="input-error" id="phone-error" role="alert" hidden></span>
+      </div>
+    </div>
+    <!-- 3 етап -->
+    <div class="flex-fill" data-step="3" data-title="Код з телеграм" data-lock-note hidden>
+      <div class="input-box">
+        <div class="card-container">
+          <div class="role-list">
+            <input type="text" id="code-input" placeholder="Введи код" aria-label="Код підтвердження"
+              inputmode="numeric" autocomplete="one-time-code" />
+            <button type="button" class="primary" id="code-submit">Підтвердити</button>
+          </div>
+        </div>
+        <span class="input-error" id="code-error" role="alert" hidden></span>
+      </div>
+    </div>
+    <!-- 4 етап (лише якщо на акаунті ввімкнена двоетапна перевірка) -->
+    <div class="flex-fill" data-step="4" data-title="Пароль (2FA)" data-lock-note hidden>
+      <div class="input-box">
+        <div class="card-container">
+          <div class="role-list">
+            <input type="password" id="password-input" placeholder="Пароль 2FA" aria-label="Пароль двоетапної перевірки"
+              autocomplete="current-password" />
+            <button type="button" class="primary" id="password-submit">Увійти</button>
+          </div>
+        </div>
+        <span class="input-error" id="password-error" role="alert" hidden></span>
+      </div>
+    </div>
+  </section>
+
+  <!-- 3. Головне вікно -->
+  <section class="main-container" id="main" hidden>
+    <!-- Вкладка "Групи" -->
+    <div id="groups-panel" data-panel="groups" class="flex-fill">
+      <div class="stats-container">
+        <div class="card-container stat-card">
+          <p class="stat-value" id="groups-count">0</p>
+          <span class="stat-label">Активних груп</span>
+        </div>
+        <div class="card-container stat-card">
+          <p class="stat-value" id="awaiting-count">0</p>
+          <span class="stat-label">Очікують відповіді</span>
+        </div>
       </div>
 
-      <div class="sub-screen" id="screen-profile" hidden>
-        <div class="hero">
-          <div class="eyebrow">MoveNation Assistant</div>
-          <h1>Профіль</h1>
-          <div class="profile-hero-card">
-            <div class="avatar" id="profile-avatar"></div>
-            <div>
-              <div class="name" id="profile-name"></div>
-              <div class="role" id="profile-role"></div>
+      <div class="input-box" data-title="Створити групу">
+        <div class="card-container">
+          <div class="role-list">
+            <input type="text" id="group-input" placeholder="Назва групи" aria-label="Назва групи" autocomplete="off" />
+            <button type="button" class="primary" id="group-submit">Створити групу</button>
+          </div>
+        </div>
+        <span class="input-error" id="group-error" role="alert" hidden></span>
+      </div>
+
+      <div class="panel-grow flex-fill" data-title="Активні групи">
+        <div class="card-container">
+          <div class="role-list" id="group-list" role="list" aria-label="Активні групи"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Вкладка "Профіль" -->
+    <div id="profile-panel" data-panel="profile" class="flex-fill" hidden>
+      <div class="card-container">
+        <div class="member-info">
+          <span class="icon-list-button profile-avatar center" id="profile-avatar" aria-hidden="true"></span>
+          <div class="label-list-button-stack">
+            <span class="label-list-button" id="profile-name"></span>
+            <span class="sublabel-list-button" id="profile-role"></span>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel-grow" data-title="Налаштування">
+        <div class="card-container profile-settings">
+          <div class="settings-row">
+            <div class="label-list-button-stack">
+              <span class="label-list-button">Посада</span>
+              <span class="sublabel-list-button" id="settings-role-value"></span>
+            </div>
+            <button type="button" class="link-button" id="role-edit-btn">Змінити</button>
+          </div>
+          <div class="settings-row">
+            <div class="label-list-button-stack">
+              <span class="label-list-button">Особистий акаунт</span>
+              <span class="sublabel-list-button">Підключено для створення груп</span>
+            </div>
+            <span class="role-badge role-badge-active" id="connection-status-badge">Активно</span>
+          </div>
+          <div class="settings-row">
+            <div class="label-list-button-stack">
+              <span class="label-list-button">Телефон</span>
+              <span class="sublabel-list-button" id="profile-phone-value">—</span>
             </div>
           </div>
         </div>
-        <div class="content">
-          <div class="card">
-            <h2><span class="dot"></span>Налаштування</h2>
-            <div class="settings-row">
-              <div>
-                <div>Посада</div>
-                <div class="label" id="profile-role-label"></div>
-              </div>
-              <button id="change-role-btn">Змінити</button>
-            </div>
-            <div class="settings-row">
-              <div>
-                <div>Особистий акаунт</div>
-                <div class="label">Підключено для створення груп</div>
-              </div>
-              <span class="status-pill" id="connection-status-pill">Активно</span>
-            </div>
-          </div>
-        </div>
       </div>
+    </div>
 
-      <div class="sub-screen" id="screen-group-detail" hidden>
-        <div class="detail-header">
-          <button class="back-btn" id="back-to-groups-btn" aria-label="Назад до груп">
-            <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 6-6 6 6 6"/></svg>
-          </button>
-          <div class="title-block">
-            <h1 id="group-detail-title"></h1>
-            <div class="sub">Команда групи</div>
-          </div>
-        </div>
-        <div class="content">
-          <div class="card">
-            <h2><span class="dot"></span>Учасники</h2>
-            <ul class="member-list" id="members"></ul>
-            <p class="status-msg" id="members-status"></p>
-          </div>
+    <div class="tabbar" id="tabbar" role="tablist" aria-label="Навігація">
+      <button type="button" class="tab-btn active" data-tab="groups" role="tab" aria-selected="true"
+        aria-controls="groups-panel" id="tab-groups">
+        <i class="fa-solid fa-users" aria-hidden="true"></i>
+        Групи
+      </button>
+      <button type="button" class="tab-btn" data-tab="profile" role="tab" aria-selected="false"
+        aria-controls="profile-panel" id="tab-profile">
+        <i class="fa-solid fa-circle-user" aria-hidden="true"></i>
+        Профіль
+      </button>
+    </div>
+  </section>
 
-          <div class="card">
-            <h2><span class="dot"></span>Додати клієнта</h2>
-            <input id="client-identifier" type="text" placeholder="@username клієнта" aria-label="Юзернейм клієнта" />
-            <button class="primary" id="add-client-btn">Додати</button>
-            <p class="status-msg" id="add-client-status"></p>
-          </div>
-
-          <div class="card">
-            <h2><span class="dot"></span>Небезпечна зона</h2>
-            <button class="danger" id="delete-group-btn">Видалити групу</button>
-            <p class="status-msg" id="delete-group-status"></p>
-          </div>
-        </div>
+  <!-- 4. Деталі групи -->
+  <section class="main-container" id="group-detail" hidden>
+    <header class="group-detail-header">
+      <button type="button" class="icon-list-button center" id="group-detail-back" aria-label="Назад до груп">
+        <i class="fa-solid fa-arrow-left" aria-hidden="true"></i>
+      </button>
+      <div class="group-detail-title-card card-container">
+        <h1 id="group-detail-title"></h1>
       </div>
-
-      <div class="tabbar" id="tabbar">
-        <button class="tab-btn active" data-tab="groups">
-          <span class="icon"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg></span>
-          Групи
+      <div class="dropdown-wrap">
+        <button type="button" class="icon-list-button center" id="group-detail-menu" aria-label="Меню групи"
+          aria-haspopup="true" aria-expanded="false">
+          <i class="fa-solid fa-ellipsis" aria-hidden="true"></i>
         </button>
-        <button class="tab-btn" data-tab="profile">
-          <span class="icon"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="3.2"/><path d="M4.5 20c1.3-3.8 4.4-6 7.5-6s6.2 2.2 7.5 6"/></svg></span>
-          Профіль
+        <div class="dropdown-menu card-container" id="group-detail-dropdown" role="menu" hidden>
+          <button type="button" class="danger" id="group-detail-delete" role="menuitem">Видалити</button>
+        </div>
+      </div>
+    </header>
+    <div class="input-box" data-title="Додати клієнта">
+      <div class="card-container">
+        <div class="role-list">
+          <input type="text" id="member-input" placeholder="@username клієнта" aria-label="Юзернейм клієнта" autocomplete="off" />
+          <button type="button" class="primary" id="member-submit">Додати клієнта</button>
+        </div>
+      </div>
+      <span class="input-error" id="member-error" role="alert" hidden></span>
+    </div>
+
+    <div class="panel-grow flex-fill" data-title="Учасники">
+      <div class="card-container">
+        <div class="role-list member-list" id="member-list" role="list" aria-label="Учасники"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 5. Модалка зміни посади — окрема секція поза #profile-panel, бо оверлей
+       має лежати поверх усього екрана (position: fixed), а не бути затиснутим
+       усередині картки, з якої його відкрили. Список посад — та сама
+       renderRoleList (role-list.js), що й на кроці 1 реєстрації. -->
+  <div class="modal-overlay center" id="role-modal-overlay" hidden>
+    <div class="modal" id="role-modal" role="dialog" aria-modal="true" aria-labelledby="role-modal-title">
+      <div class="modal-header card-container">
+        <div class="title">
+          <span class="dot" aria-hidden="true"></span>
+          <h2 id="role-modal-title">Зміна посади</h2>
+        </div>
+        <button type="button" class="icon-list-button center" id="role-modal-close" aria-label="Закрити">
+          <i class="fa-solid fa-xmark" aria-hidden="true"></i>
         </button>
       </div>
+      <div class="modal-body card-container">
+        <div class="role-list" id="role-modal-list" role="radiogroup" aria-label="Посада"></div>
+      </div>
+    </div>
+  </div>
 
-    </section>
-
+  <!-- 6. Toast підтвердження дії — окрема секція поза екранами (як і модалка
+       вище), бо теж лежить поверх усього (position: fixed). -->
+  <div class="toast center" id="toast" role="status" aria-live="polite" hidden>
+    <i class="fa-solid fa-circle-check" aria-hidden="true"></i>
+    <span id="toast-text"></span>
   </div>
 
   <script type="module" src="js/main.js"></script>
 </body>
+
 </html>

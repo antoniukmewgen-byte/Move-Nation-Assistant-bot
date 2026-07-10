@@ -52,6 +52,7 @@ class UserMeOut(BaseModel):
     full_name: str | None
     role: str | None
     is_connected: bool
+    phone: str | None = None
 
 
 class PhoneRequest(BaseModel):

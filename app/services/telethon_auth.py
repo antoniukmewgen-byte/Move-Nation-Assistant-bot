@@ -152,7 +152,7 @@ async def submit_code(user_id: int, code: str) -> AuthStepResult:
             await _cancel_auth_locked(user_id)
             return AuthStepResult(status="error", error=f"Не вдалося увійти: {exc}")
 
-        return await _finish(user_id, client)
+        return await _finish(user_id, client, data["phone"])
 
 
 async def submit_password(user_id: int, password: str) -> AuthStepResult:
@@ -168,7 +168,12 @@ async def submit_password(user_id: int, password: str) -> AuthStepResult:
             await _cancel_auth_locked(user_id)
             return AuthStepResult(status="error", error=f"Не вдалося увійти: {exc}")
 
-        return await _finish(user_id, client)
+        # _finish() below pops _pending_phone_data — read the phone submitted
+        # back in step 1 (/auth/phone) before that happens, same as
+        # submit_code's `data["phone"]` above. The 2FA password step never
+        # re-sends the phone itself, so this is the only place left to get it.
+        phone = _pending_phone_data.get(user_id, {}).get("phone")
+        return await _finish(user_id, client, phone)
 
 
 async def cancel_auth(user_id: int) -> None:
@@ -184,7 +189,7 @@ async def _cancel_auth_locked(user_id: int) -> None:
         await client.disconnect()
 
 
-async def _finish(user_id: int, client: TelegramClient) -> AuthStepResult:
+async def _finish(user_id: int, client: TelegramClient, phone: str | None = None) -> AuthStepResult:
     session_string = client.session.save()
     await client.disconnect()
     _pending_clients.pop(user_id, None)
@@ -193,6 +198,11 @@ async def _finish(user_id: int, client: TelegramClient) -> AuthStepResult:
     encrypted = encrypt_session(session_string)
     async with async_session() as session:
         await crud.set_user_session(session, user_id, encrypted)
+        # Only persisted here, on a *successful* login — not when the code is
+        # first requested — so a mistyped/abandoned attempt never overwrites
+        # an already-connected account's real number with something unverified.
+        if phone:
+            await crud.set_user_phone(session, user_id, phone)
         await session.commit()
 
     # is_connected just flipped to true — both the bot's /connect flow and

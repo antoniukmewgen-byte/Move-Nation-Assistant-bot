@@ -1,12 +1,151 @@
 import { apiFetch, initData } from "./api.js";
 import { showStep } from "./navigation.js";
-import { CHEVRON_SVG, escapeHtml, roleInitials } from "./render.js";
-import { resetConnectStep } from "./connect.js";
+import { fadeIn, fadeOut, crossfadeText } from "./transitions.js";
+import { buildStepStates, renderStepper, ROLE_STEPPER_LABELS } from "./stepper.js";
+import { renderStepHeader } from "./step-header.js";
+import { renderRoleList } from "./role-list.js";
+import { getTotalSteps, resetPasswordStepNeeded } from "./progress.js";
+import { showToast } from "./toast.js";
 import { enterMainApp } from "./mainApp.js";
-import { renderOnboardingProgress } from "./progress.js";
 
-// --- Onboarding: everything (registration, role, account connect) happens
-// here in the Mini App — there is no chat-based flow to fall back to. ---
+// --- Onboarding: role -> phone -> code -> (optional) 2FA password, all as
+// one animated stepper inside #role-step (DESIGN's registration.js layout),
+// wired to the real backend instead of DESIGN's `wait()` mock. ---
+
+const roleStepperEl = document.getElementById("role-stepper");
+const stepHeaderEl = document.getElementById("step-header");
+const stepTitleEl = document.getElementById("step-title");
+const stepDescriptionEl = document.getElementById("step-description");
+const roleListEl = document.getElementById("role-list");
+const stepCards = document.querySelectorAll("#role-step > [data-step]");
+
+// Текст плашки про сесію однаковий для кожного кроку, де вона потрібна
+// (позначений data-lock-note) — рендеримо один раз при завантаженні, як і в DESIGN.
+const LOCK_NOTE_TEXT =
+  "Сесія зберігається у зашифрованому вигляді і використовується лише для дій, які ти сам ініціюєш через бота.";
+
+function renderLockNote(stepPanel) {
+  if (!("lockNote" in stepPanel.dataset)) return;
+  const note = document.createElement("div");
+  note.className = "lock-note";
+  note.innerHTML = `<span class="note-text">${LOCK_NOTE_TEXT}</span>`;
+  stepPanel.append(note);
+}
+
+stepCards.forEach(renderLockNote);
+
+let currentStep = 1;
+
+// Перемальовує степер і заголовок кроку відповідно до currentStep.
+// animate=false — для першого показу картки/кроку (на завантаженні чи при
+// вході в showRoleStep()), щоб не було зайвого фейду "крок 1 -> потрібний
+// крок" перед тим, як секція взагалі стала видимою.
+function updateStepUI(animate) {
+  const total = getTotalSteps();
+
+  if (roleStepperEl) {
+    const states = buildStepStates(total, currentStep);
+    renderStepper(roleStepperEl, states, ROLE_STEPPER_LABELS);
+  }
+
+  if (stepTitleEl && stepDescriptionEl) {
+    if (animate) {
+      crossfadeText(stepHeaderEl, () => renderStepHeader(stepTitleEl, stepDescriptionEl, currentStep));
+    } else {
+      renderStepHeader(stepTitleEl, stepDescriptionEl, currentStep);
+    }
+  }
+
+  const cards = Array.from(stepCards);
+  const targetCard = cards.find((card) => Number(card.dataset.step) === currentStep);
+  if (!targetCard) return;
+
+  if (!animate) {
+    cards.forEach((card) => {
+      card.hidden = card !== targetCard;
+    });
+    return;
+  }
+
+  const visibleCard = cards.find((card) => !card.hidden);
+  if (targetCard === visibleCard) return;
+
+  if (visibleCard) {
+    fadeOut(visibleCard, () => fadeIn(targetCard));
+  } else {
+    fadeIn(targetCard);
+  }
+}
+
+// Єдина точка переходу на інший крок — використовується і роль-кліком тут,
+// і connect.js після кожного успішного кроку (телефон/код/пароль).
+export function goToStep(step, { animate = true } = {}) {
+  currentStep = step;
+  updateStepUI(animate);
+}
+
+let cachedRoles = null;
+
+// Список посад — той самий для кроку 1 реєстрації і для модалки "Змінити
+// посаду" в профілі (profile.js), тож кешуємо один запит замість дублювання
+// в обох місцях.
+export async function fetchRoles() {
+  if (cachedRoles) return cachedRoles;
+  const res = await apiFetch("/users/roles");
+  cachedRoles = await res.json();
+  return cachedRoles;
+}
+
+export async function submitRole(roleName) {
+  const res = await apiFetch("/users/role", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ role: roleName }),
+  });
+  if (!res.ok) throw new Error("Не вдалося зберегти посаду. Спробуй ще раз.");
+  return res.json();
+}
+
+let roleSelectionBusy = false;
+
+if (roleListEl) {
+  // Вибір посади завершує крок 1 — на відміну від DESIGN (локальний стан,
+  // без запиту), тут це реальний POST /users/role, тож кнопки на час запиту
+  // блокуються, а помилка мережі показується тостом (для степу 1 немає
+  // окремого input-error, як для кроків 2-4).
+  roleListEl.addEventListener("click", async (event) => {
+    const button = event.target.closest(".list-button");
+    if (!button || roleSelectionBusy) return;
+
+    roleSelectionBusy = true;
+    const buttons = roleListEl.querySelectorAll(".list-button");
+    buttons.forEach((btn) => (btn.disabled = true));
+
+    try {
+      await submitRole(button.dataset.roleName);
+      buttons.forEach((btn) => btn.setAttribute("aria-checked", String(btn === button)));
+      goToStep(2);
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : String(error), "error");
+    } finally {
+      roleSelectionBusy = false;
+      buttons.forEach((btn) => (btn.disabled = false));
+    }
+  });
+}
+
+// Показує крок 1 (вибір посади) — викликається лише коли реєстрація дійсно
+// не завершена (routeByProfile нижче), завжди починаючи з кроку 1: як і в
+// оригінальному onboarding.js, реєстрація — один атомарний потік, і
+// повторне відкриття Mini App під час незавершеної реєстрації починає її
+// заново, а не продовжує з середини.
+export async function showRoleStep() {
+  resetPasswordStepNeeded();
+  const roles = await fetchRoles();
+  renderRoleList(roleListEl, roles);
+  goToStep(1, { animate: false });
+  showStep("role-step");
+}
 
 export async function bootstrap() {
   if (!initData) {
@@ -23,95 +162,23 @@ export async function bootstrap() {
   }
 
   const me = await res.json();
-  // `restart: true` here means "this is a fresh app open, not a step the
-  // user just completed" — see routeByProfile for why that distinction
-  // matters.
-  await routeByProfile(me, { restart: true });
+  await routeByProfile(me);
 }
 
 export async function routeByProfile(me, options = {}) {
-  // Registration (role + connected account) is treated as one atomic flow:
-  // if it isn't fully finished, reopening the Mini App always restarts at
-  // role selection rather than resuming at whatever step was left off
-  // (e.g. jumping straight to phone entry because a role was already
-  // picked in an earlier, abandoned session). `options.restart` is only
-  // set by `bootstrap()` on a fresh open — calls from *within* the flow
-  // itself (`selectRole` advancing to the connect step right after picking
-  // a role) omit it, so picking a role doesn't just loop back here.
-  if (!me.role || (options.restart && !me.is_connected)) {
+  if (!me.role || !me.is_connected) {
     await showRoleStep();
-    return;
-  }
-  if (!me.is_connected) {
-    resetConnectStep();
-    showStep("connect-step");
     return;
   }
   await enterMainApp(me, options.initialTab);
 }
 
-// `editing: true` is used when this screen is opened from the "Змінити"
-// button in Profile settings (an already-onboarded user changing their
-// role), as opposed to first-time onboarding via `routeByProfile()`. In
-// that mode we drop the "Крок 1 з 2" onboarding framing in favour of
-// settings-appropriate copy, and reveal a back button so the user can
-// bail out without changing anything.
-export async function showRoleStep(options = {}) {
-  const editing = Boolean(options.editing);
-  const res = await apiFetch("/users/roles");
-  const roles = await res.json();
-  const list = document.getElementById("role-list");
-  list.innerHTML = "";
-
-  roles.forEach((role) => {
-    const li = document.createElement("li");
-    const button = document.createElement("button");
-    button.className = "list-row";
-    button.innerHTML =
-      `<span class="icon-pill">${escapeHtml(roleInitials(role))}</span>` +
-      `<span class="row-label">${escapeHtml(role.value)}</span>` +
-      `<span class="chevron">${CHEVRON_SVG}</span>`;
-    button.addEventListener("click", () => selectRole(role.name, button, { editing }));
-    li.appendChild(button);
-    list.appendChild(li);
-  });
-
-  document.getElementById("role-step-back-btn").hidden = !editing;
-  document.getElementById("role-step-eyebrow").hidden = editing;
-  // The step counter/progress dots only make sense during first-time
-  // registration — "Змінити посаду" from Profile settings is an existing
-  // user tweaking a setting, not a step in a multi-step flow.
-  document.getElementById("role-step-dots").hidden = editing;
-  document.getElementById("role-step-title").textContent = editing ? "Зміна посади" : "Обери посаду";
-  document.getElementById("role-step-text").textContent = editing
-    ? "Обери нову посаду зі списку нижче."
-    : "Це потрібно один раз — щоб бот знав, хто ти в команді, і показував потрібні функції.";
-
-  if (!editing) {
-    renderOnboardingProgress("role", "role-step-eyebrow", [
-      "role-dot-role",
-      "role-dot-phone",
-      "role-dot-code",
-      "role-dot-password",
-    ]);
-  }
-
-  showStep("role-step");
-}
-
-async function selectRole(roleName, button, options = {}) {
-  button.disabled = true;
-  const res = await apiFetch("/users/role", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ role: roleName }),
-  });
-
-  if (!res.ok) {
-    button.disabled = false;
-    return;
-  }
-
-  const me = await res.json();
-  await routeByProfile(me, { initialTab: options.editing ? "profile" : "groups" });
+// Викликається з connect.js, коли /auth/code чи /auth/password повертає
+// "connected" — реєстрація завершена, тож просто перезапитуємо актуальний
+// профіль і йдемо туди, куди він справді вказує (завжди #main, бо на цей
+// момент і роль, і підключення вже готові).
+export async function finishRegistration() {
+  const meRes = await apiFetch("/users/me");
+  const me = await meRes.json();
+  await routeByProfile(me, { initialTab: "groups" });
 }

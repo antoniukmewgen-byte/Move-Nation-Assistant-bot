@@ -151,6 +151,12 @@ async def set_user_session(session: AsyncSession, user_id: int, encrypted_sessio
         user.session_string = encrypted_session
 
 
+async def set_user_phone(session: AsyncSession, user_id: int, phone: str) -> None:
+    user = await session.get(User, user_id)
+    if user:
+        user.phone = phone
+
+
 async def get_user_session(session: AsyncSession, user_id: int) -> str | None:
     user = await session.get(User, user_id)
     return user.session_string if user else None

@@ -1,15 +1,7 @@
 // --- small render helpers shared by several screens ---
-
-export const CHEVRON_SVG =
-  '<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"/></svg>';
-
-export const GROUP_ICON_SVG =
-  '<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">' +
-  '<path d="M21 8 12 3 3 8v8l9 5 9-5Z"/><path d="M3 8l9 5 9-5"/><path d="M12 13v8"/></svg>';
-
-export const TRASH_ICON_SVG =
-  '<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">' +
-  '<path d="M4 7h16"/><path d="M9 7V4h6v3"/><path d="M6 7l1 13h10l1-13"/></svg>';
+// Note: DESIGN's icon SVG constants (chevron/group/trash) were dropped here —
+// the ported markup uses FontAwesome <i> icons everywhere instead, so those
+// exports would just be dead code.
 
 // Curated 2-3 letter abbreviations for the fixed set of roles in app.db.models.Role,
 // keyed by the enum member name (stable) rather than the Ukrainian label (display

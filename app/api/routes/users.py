@@ -75,4 +75,5 @@ def _to_user_out(user: User) -> UserMeOut:
         full_name=user.full_name,
         role=user.role.value if user.role else None,
         is_connected=user.session_string is not None,
+        phone=user.phone,
     )

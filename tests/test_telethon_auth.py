@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from telethon.errors import PhoneCodeInvalidError, PhoneNumberInvalidError, SessionPasswordNeededError
 
 from app.db import crud
-from app.db.models import Base
+from app.db.models import Base, User
 from app.services import telethon_auth
 
 pytestmark = pytest.mark.asyncio
@@ -104,6 +104,25 @@ async def test_full_login_without_2fa() -> None:
         assert await crud.get_user_session(session, 1) is not None
 
 
+async def test_successful_login_persists_the_submitted_phone_number() -> None:
+    # Only a *completed* login should write users.phone — see _finish's
+    # comment on why this isn't done at the code-request step.
+    await telethon_auth.start_phone_auth(1, "alice", "Alice", "+380000000")
+    await telethon_auth.submit_code(1, "123456")
+
+    async with telethon_auth.async_session() as session:
+        user = await session.get(User, 1)
+        assert user is not None
+        assert user.phone == "+380000000"
+
+
+async def test_invalid_phone_does_not_create_a_user_row_or_persist_a_phone() -> None:
+    await telethon_auth.start_phone_auth(1, "alice", "Alice", "+000invalid")
+
+    async with telethon_auth.async_session() as session:
+        assert await session.get(User, 1) is None
+
+
 async def test_login_with_2fa_requires_password() -> None:
     await telethon_auth.start_phone_auth(1, "alice", "Alice", "+380000000")
 
@@ -121,6 +140,13 @@ async def test_login_with_2fa_requires_password() -> None:
     await telethon_auth.submit_code(1, "222222")
     ok = await telethon_auth.submit_password(1, "correct")
     assert ok.status == "connected"
+
+    # The password step doesn't re-submit the phone itself — it must still
+    # end up persisted, carried over from the original /auth/phone call.
+    async with telethon_auth.async_session() as session:
+        user = await session.get(User, 1)
+        assert user is not None
+        assert user.phone == "+380000000"
 
 
 async def test_invalid_code_clears_pending_state() -> None:
