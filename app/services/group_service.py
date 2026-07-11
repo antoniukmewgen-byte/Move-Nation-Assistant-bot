@@ -45,7 +45,15 @@ async def _send_group_welcome_message(chat_id: int, title: str, staff: list[User
     Найкращий-варіант і без винятків назовні: сам факт створення групи вже
     закомічено викликачем, а це повідомлення — лише косметичне вітання.
     """
-    roster = "\n".join(f"• {escape(user.full_name or user.username or str(user.id))} — {user.role.value}" for user in staff)
+    roster_lines = []
+    for user in staff:
+        # `staff` comes from crud.get_staff_users(), which DB-filters to
+        # `role IS NOT NULL` — real at runtime, but not visible to mypy
+        # through the `list[User]` return type, hence the assert.
+        assert user.role is not None
+        name = escape(user.full_name or user.username or str(user.id))
+        roster_lines.append(f"• {name} — {user.role.value}")
+    roster = "\n".join(roster_lines)
     text = (
         f"👋 Привіт! Я асистент групи «<b>{escape(title)}</b>».\n"
         "Буду нагадувати, якщо клієнт довго чекає на відповідь.\n\n"
