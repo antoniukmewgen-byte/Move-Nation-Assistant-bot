@@ -94,3 +94,8 @@ Traceback (most recent call last):
 aiogram.exceptions.TelegramBadRequest: Telegram server says - Bad Request: can't remove chat owner
 2026-07-10 18:52:38,185 | INFO     | app.services.telethon_auth | Код надіслано для user_id=8676009145: type=SentCodeTypeApp next_type=None timeout=None
 2026-07-10 18:54:45,523 | INFO     | app.services.group_service | Не можу встановити тег «Керівник» для user_id=8676009145 у групі -1003911879846 — це власник чату, Telegram дозволяє тегувати творця лише йому самому
+2026-07-10 18:59:21,817 | INFO     | app.services.group_service | Не можу встановити тег «Керівник» для user_id=8676009145 у групі -1003929757798 — це власник чату, Telegram дозволяє тегувати творця лише йому самому
+2026-07-10 19:09:16,114 | INFO     | app.services.group_service | Не можу встановити тег «Відділ продажу» для user_id=8676009145 у групі -1003911879846 — це власник чату, Telegram дозволяє тегувати творця лише йому самому
+2026-07-10 19:09:16,188 | INFO     | app.services.group_service | Не можу встановити тег «Відділ продажу» для user_id=8676009145 у групі -1003929757798 — це власник чату, Telegram дозволяє тегувати творця лише йому самому
+2026-07-10 19:09:24,334 | INFO     | app.services.group_service | Не можу встановити тег «Керівник» для user_id=8676009145 у групі -1003911879846 — це власник чату, Telegram дозволяє тегувати творця лише йому самому
+2026-07-10 19:09:24,398 | INFO     | app.services.group_service | Не можу встановити тег «Керівник» для user_id=8676009145 у групі -1003929757798 — це власник чату, Telegram дозволяє тегувати творця лише йому самому

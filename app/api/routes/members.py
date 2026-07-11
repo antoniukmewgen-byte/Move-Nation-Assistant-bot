@@ -141,7 +141,14 @@ async def remove_member(payload: RemoveMemberRequest, requested_by: int = Depend
         removed = await crud.remove_member(session, payload.group_id, payload.user_id)
         await session.commit()
 
-    if not removed:
+    # `removed` can legitimately come back False even for a member that just
+    # got kicked above: ban_chat_member() makes Telegram fire a chat_member
+    # "left" update back at the bot immediately, and
+    # app.bot.handlers.messages.on_member_left_group races this same
+    # crud.remove_member call — whichever commits first wins, and the loser
+    # just finds no rows left. That's not a failure, so only 404 when the
+    # member wasn't actually removed anywhere (neither Telegram nor our DB).
+    if not removed and not removed_in_telegram:
         raise HTTPException(status_code=404, detail="Учасника не знайдено")
 
     # The removed user's own /groups list lost this group; everyone else

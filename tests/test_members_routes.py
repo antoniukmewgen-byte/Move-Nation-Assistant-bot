@@ -306,6 +306,39 @@ async def test_remove_member_returns_404_when_not_a_member(_patch_db) -> None:
     assert exc_info.value.status_code == 404
 
 
+async def test_remove_member_does_not_404_when_a_webhook_race_already_removed_the_row(
+    _patch_db, monkeypatch: pytest.MonkeyPatch, _patch_bot_kick: list[tuple[int, int]]
+) -> None:
+    # ban_chat_member() makes Telegram fire a chat_member "left" update back
+    # at the bot almost immediately, and on_member_left_group
+    # (app/bot/handlers/messages.py) races this route's own crud.remove_member
+    # call to delete the same group_members row. If that webhook wins the
+    # race, the row is already gone by the time this route looks for it —
+    # that must not surface as "Учасника не знайдено" to the client, since
+    # the member genuinely was removed (just by the other consumer).
+    await _seed_group_with_member(_patch_db)
+    async with _patch_db() as session:
+        await crud.get_or_create_user(session, 2, "client", "Client C.")
+        await crud.add_member_tag(session, 100, 2, CLIENT_TAG)
+        await session.commit()
+
+    async def fake_kick_via_assistant_bot(chat_id: int, user_id: int) -> bool:
+        assert chat_id == 100
+        assert user_id == 2
+        # Simulate on_member_left_group having already deleted the row
+        # before this route's own crud.remove_member call runs below.
+        async with _patch_db() as session:
+            await crud.remove_member(session, chat_id, user_id)
+            await session.commit()
+        return True
+
+    monkeypatch.setattr(members_routes, "_kick_via_assistant_bot", fake_kick_via_assistant_bot)
+
+    result = await members_routes.remove_member(RemoveMemberRequest(group_id=100, user_id=2), requested_by=1)
+
+    assert result == {"ok": True, "removed_in_telegram": True}
+
+
 async def test_remove_member_uses_bot_kick_and_skips_telethon_fallback(
     _patch_db, monkeypatch: pytest.MonkeyPatch, _patch_bot_kick: list[tuple[int, int]]
 ) -> None:
