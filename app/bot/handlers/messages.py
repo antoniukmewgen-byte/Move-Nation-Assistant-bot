@@ -244,7 +244,7 @@ async def track_group_message(message: Message) -> None:
 
         if sender_is_client:
             message_at = message.date or datetime.utcnow()
-            await crud.mark_awaiting_response(session, message.chat.id, sender.id, message_at)
+            await crud.mark_awaiting_response(session, message.chat.id, sender.id, message_at, message.text or "")
         else:
             await crud.clear_awaiting_response(session, message.chat.id)
 

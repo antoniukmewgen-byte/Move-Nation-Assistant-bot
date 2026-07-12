@@ -385,12 +385,13 @@ async def is_client(session: AsyncSession, group_id: int, user_id: int) -> bool:
 
 
 async def mark_awaiting_response(
-    session: AsyncSession, group_id: int, from_user_id: int, at: datetime
+    session: AsyncSession, group_id: int, from_user_id: int, at: datetime, text: str
 ) -> None:
     group = await session.get(Group, group_id)
     if group:
         group.last_message_from_id = from_user_id
         group.last_message_at = at
+        group.last_message_text = text
         group.awaiting_response = True
         # Новий (або черговий) неопрацьований меседж скидає лічильник нагадувань:
         # перше нагадування по цьому циклу знову має чекати повний інтервал від

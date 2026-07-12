@@ -60,6 +60,7 @@ class Group(Base):
 
     last_message_from_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     last_message_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_message_text: Mapped[str | None] = mapped_column(String(4096), nullable=True)
     awaiting_response: Mapped[bool] = mapped_column(Boolean, default=False)
     last_reminder_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 

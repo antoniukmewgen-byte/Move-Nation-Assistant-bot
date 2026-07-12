@@ -1,6 +1,7 @@
 import logging
 from datetime import datetime, timedelta
 from html import escape
+from zoneinfo import ZoneInfo
 
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
@@ -13,6 +14,28 @@ from app.services.scheduler import scheduler
 logger = logging.getLogger(__name__)
 
 REMINDER_STICKER_FILE_ID = "CAACAgIAAxkBAAFOjUZqTjtcAAHM3yK2EAMDk7k6Ao0F0iMAAiGpAAJihjhK3WFS7vThE6w8BA"
+
+KYIV_TZ = ZoneInfo("Europe/Kyiv")
+
+# Довге повідомлення клієнта не варто вставляти в нагадування цілком — і так
+# зрозуміло, про що йдеться, короткий уривок достатній, а обмеження довжини
+# захищає від надто розтягнутого сповіщення.
+MAX_QUOTED_MESSAGE_LENGTH = 300
+
+
+def _format_last_message_at(at: datetime) -> str:
+    """`last_message_at` зберігається наївним UTC (`datetime.utcnow()`),
+    тож перед показом користувачу явно проставляємо UTC і конвертуємо
+    в київський час — інакше час у сповіщенні буде на 2-3 години раніше
+    реального."""
+    return at.replace(tzinfo=ZoneInfo("UTC")).astimezone(KYIV_TZ).strftime("%d.%m.%Y %H:%M")
+
+
+def _quote_message_text(text: str) -> str:
+    text = text.strip()
+    if len(text) > MAX_QUOTED_MESSAGE_LENGTH:
+        text = text[:MAX_QUOTED_MESSAGE_LENGTH].rstrip() + "…"
+    return escape(text)
 
 
 def _job_id(group_id: int) -> str:
@@ -106,13 +129,18 @@ async def send_group_reminder(group_id: int) -> None:
             builder.button(text="↪️ Перейти в групу", url=deep_link)
             reply_markup = builder.as_markup()
 
+        text_block = ""
+        if group.last_message_text and group.last_message_at:
+            text_block = f'\n\n🕐 {_format_last_message_at(group.last_message_at)}\n💬 «{_quote_message_text(group.last_message_text)}»'
+
         for user in recipients:
             try:
                 await bot.send_sticker(user.id, REMINDER_STICKER_FILE_ID)
                 await bot.send_message(
                     user.id,
                     f"🔔👀 Клієнт у групі «<b>{escape(group.title)}</b>» досі чекає на відповідь!\n"
-                    "💬 Не змушуй його чекати довше 🙏",
+                    "💬 Не змушуй його чекати довше 🙏"
+                    f"{text_block}",
                     reply_markup=reply_markup,
                 )
             except Exception:

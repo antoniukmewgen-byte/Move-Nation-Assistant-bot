@@ -352,7 +352,7 @@ async def test_awaiting_response_lifecycle(db_session: AsyncSession) -> None:
     await crud.create_group_record(db_session, group_id=100, title="Group A", created_by_userbot=True)
     assert (await crud.get_groups_awaiting_response(db_session)) == []
 
-    await crud.mark_awaiting_response(db_session, 100, from_user_id=2, at=datetime.utcnow())
+    await crud.mark_awaiting_response(db_session, 100, from_user_id=2, at=datetime.utcnow(), text="Привіт, є питання")
     await db_session.flush()
     awaiting = await crud.get_groups_awaiting_response(db_session)
     assert [g.id for g in awaiting] == [100]
