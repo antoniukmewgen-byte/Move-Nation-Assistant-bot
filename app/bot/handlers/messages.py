@@ -128,28 +128,47 @@ async def on_bot_removed_from_group(event: ChatMemberUpdated) -> None:
 
 @router.chat_member(ChatMemberUpdatedFilter(member_status_changed=JOIN_TRANSITION))
 async def on_member_joined_group(event: ChatMemberUpdated) -> None:
-    """Знімає прапорець `pending` із клієнта, коли він дійсно приєднався за лінком.
+    """Тегує учасника, коли Telegram підтверджує його фактичний вступ у групу.
 
-    `group_service.add_client` (app/services/group_service.py) ставить
-    `pending=True`, коли прямий додаток клієнта не вдався через приватність
-    і йому лишилось надіслати лінк-запрошення — до цього моменту він ще не
-    в чаті, тож Mini App/команда /register не повинні показувати його як
-    повноцінного учасника. `router.chat_member` (на відміну від
-    `router.my_chat_member` вище) якраз і стежить за змінами статусу *інших*
-    учасників чату, а не самого бота, і спрацьовує, коли Telegram підтверджує
-    фактичне приєднання.
+    Два шляхи, залежно від того, чи проводили людину через `/add_client`
+    заздалегідь:
+
+    - Якщо є pending-запис (`group_service.add_client` ставить
+      `pending=True`, коли прямий додаток не вдався через приватність і
+      клієнту лишилось надіслати лінк-запрошення — до цього моменту він ще
+      не в чаті, тож Mini App не повинен показувати його як повноцінного
+      учасника) — знімаємо pending і синхронізуємо вже призначений тег.
+    - Якщо pending-запису нема (людину додали в обхід бота — наприклад,
+      узяли лінк групи напряму в Telegram) — тегуємо її з нуля тим самим
+      правилом, що й повний /sync (`group_service.tag_new_member`).
+
+    `router.chat_member` (на відміну від `router.my_chat_member` вище)
+    якраз і стежить за змінами статусу *інших* учасників чату, а не самого
+    бота, і спрацьовує, коли Telegram підтверджує фактичне приєднання —
+    але лише якщо бот сам є адміністратором цього чату (інакше Telegram
+    цю подію боту взагалі не надсилає).
     """
     if event.chat.type not in ("group", "supergroup"):
         return
 
+    new_member = event.new_chat_member.user
+
     async with async_session() as session:
-        tag = await crud.clear_pending(session, event.chat.id, event.new_chat_member.user.id)
+        tag = await crud.clear_pending(session, event.chat.id, new_member.id)
         if tag is not None:
             await session.commit()
 
     if tag is not None:
-        await group_service.sync_tag_to_telegram(event.chat.id, event.new_chat_member.user.id, tag)
+        await group_service.sync_tag_to_telegram(event.chat.id, new_member.id, tag)
         await realtime.notify_group(event.chat.id, {"type": "members_changed", "group_id": event.chat.id})
+        return
+
+    # Ніякого pending-запису не було — цю людину не проводили через
+    # /add_client заздалегідь (наприклад, лінк групи взяли напряму в
+    # Telegram, а не той, що видав бот). Тегуємо все одно, за тим самим
+    # правилом, що й повний /sync (group_service.sync_group): роль із БД,
+    # якщо є, інакше CLIENT_TAG.
+    await group_service.tag_new_member(event.chat.id, new_member.id, new_member.username, new_member.full_name)
 
 
 @router.chat_member(ChatMemberUpdatedFilter(member_status_changed=LEAVE_TRANSITION))

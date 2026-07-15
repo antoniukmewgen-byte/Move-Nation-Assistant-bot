@@ -372,6 +372,65 @@ async def test_on_member_joined_group_notifies_the_group(
     assert _patch_realtime.notify_group_calls == [(100, {"type": "members_changed", "group_id": 100})]
 
 
+async def test_on_member_joined_group_without_pending_record_tags_and_notifies(
+    _patch_db, _patch_realtime: _NotifyRecorder, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # No add_member_tag(..., pending=True) call for user_id=2 here — this
+    # covers someone who joined via a link grabbed straight from the group
+    # in Telegram, bypassing /add_client entirely (clear_pending finds
+    # nothing, so tag_new_member's fallback path is what must tag them).
+    async with _patch_db() as session:
+        await crud.create_group_record(session, 100, "Team Chat", created_by_userbot=False)
+        await session.commit()
+
+    async def fake_sync_tag_to_telegram(*_args):
+        return None
+
+    monkeypatch.setattr(group_service, "sync_tag_to_telegram", fake_sync_tag_to_telegram)
+
+    event = SimpleNamespace(
+        chat=FakeChat(id=100, type="supergroup"),
+        new_chat_member=SimpleNamespace(user=SimpleNamespace(id=2, username="newclient", full_name="New Client")),
+    )
+
+    await messages_handlers.on_member_joined_group(event)
+
+    assert _patch_realtime.notify_group_calls == [(100, {"type": "members_changed", "group_id": 100})]
+
+    async with _patch_db() as session:
+        members = await crud.get_group_members(session, 100)
+        assert [(m.user_id, m.tag) for m in members] == [(2, CLIENT_TAG)]
+
+
+async def test_on_member_joined_group_without_pending_record_tags_staff_with_their_role(
+    _patch_db, _patch_realtime: _NotifyRecorder, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Same as above, but the joiner is already a staff member in our DB
+    # (e.g. someone invited straight into an existing group by another
+    # employee) — they should get their role, not CLIENT_TAG.
+    async with _patch_db() as session:
+        await crud.get_or_create_user(session, 2, "bob", "Bob B.")
+        await crud.set_user_role(session, 2, Role.MANAGER)
+        await crud.create_group_record(session, 100, "Team Chat", created_by_userbot=False)
+        await session.commit()
+
+    async def fake_sync_tag_to_telegram(*_args):
+        return None
+
+    monkeypatch.setattr(group_service, "sync_tag_to_telegram", fake_sync_tag_to_telegram)
+
+    event = SimpleNamespace(
+        chat=FakeChat(id=100, type="supergroup"),
+        new_chat_member=SimpleNamespace(user=SimpleNamespace(id=2, username="bob", full_name="Bob B.")),
+    )
+
+    await messages_handlers.on_member_joined_group(event)
+
+    async with _patch_db() as session:
+        members = await crud.get_group_members(session, 100)
+        assert [(m.user_id, m.tag) for m in members] == [(2, Role.MANAGER.value)]
+
+
 async def test_on_member_left_group_notifies_the_removed_user_and_the_group(
     _patch_db, _patch_realtime: _NotifyRecorder
 ) -> None:

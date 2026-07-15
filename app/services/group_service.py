@@ -259,6 +259,35 @@ async def add_client(user_id: int, group_id: int, identifier: str) -> tuple[int,
     return client_user_id, invite_link
 
 
+async def tag_new_member(chat_id: int, user_id: int, username: str | None, full_name: str | None) -> None:
+    """Автотегує учасника одразу після вступу, якщо для нього не було pending-запису.
+
+    `on_member_joined_group` (app/bot/handlers/messages.py) викликає це,
+    коли `crud.clear_pending` повернув None — тобто людину не проводили
+    через `/add_client` заздалегідь (наприклад, її запросили просто лінком
+    групи напряму в Telegram, без участі бота). Раніше такий учасник лишався
+    б без офіційного тега аж до наступного ручного /sync; тепер тегуємо
+    одразу тим самим правилом, що й повний скан у `sync_group`: якщо в БД
+    для нього вже є призначена роль — це свій співробітник, якого просто
+    додали в групу напряму, тегуємо його роллю; інакше вважаємо клієнтом
+    (`CLIENT_TAG`).
+
+    Best-effort і мовчазний no-op, якщо ця група взагалі не зареєстрована в
+    нашій БД — нема куди записувати тег.
+    """
+    async with async_session() as session:
+        if await crud.get_group(session, chat_id) is None:
+            return
+        db_user = await crud.get_or_create_user(session, user_id, username, full_name)
+        desired_tag = db_user.role.value if db_user.role else CLIENT_TAG
+        changed = await crud.set_member_tag(session, chat_id, user_id, desired_tag)
+        await session.commit()
+
+    if changed:
+        await sync_tag_to_telegram(chat_id, user_id, desired_tag)
+        await realtime.notify_group(chat_id, {"type": "members_changed", "group_id": chat_id})
+
+
 async def offboard_staff(user_id: int) -> int:
     """Звільняє співробітника: прибирає його з усіх груп, де він зараз
     затегований, і повністю видаляє з БД (роль, /connect-сесію, усі теги).
