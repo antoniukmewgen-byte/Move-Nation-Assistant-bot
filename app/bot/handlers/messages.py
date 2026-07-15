@@ -4,7 +4,12 @@ from datetime import datetime, timedelta
 from aiogram import F, Router
 from aiogram.exceptions import TelegramBadRequest, TelegramMigrateToChat
 from aiogram.filters import Command
-from aiogram.filters.chat_member_updated import JOIN_TRANSITION, LEAVE_TRANSITION, ChatMemberUpdatedFilter
+from aiogram.filters.chat_member_updated import (
+    JOIN_TRANSITION,
+    LEAVE_TRANSITION,
+    PROMOTED_TRANSITION,
+    ChatMemberUpdatedFilter,
+)
 from aiogram.types import ChatMemberUpdated, Message
 from telethon.errors import FloodWaitError
 
@@ -19,17 +24,30 @@ from app.services.group_creation_registry import is_pending
 router = Router()
 
 
-@router.my_chat_member(ChatMemberUpdatedFilter(member_status_changed=JOIN_TRANSITION))
+@router.my_chat_member(ChatMemberUpdatedFilter(member_status_changed=PROMOTED_TRANSITION))
 async def on_bot_added_to_group(event: ChatMemberUpdated) -> None:
-    # JOIN_TRANSITION matches any "not a member -> member-like" change, which
-    # includes not just genuine external joins but also the member ->
-    # administrator promotion our own userbot flow triggers right after
-    # creating a group (app/userbot/actions.py::_promote_assistant_bot) — to
-    # the Bot API, that promotion is the *first* status change it's ever seen
-    # for the post-migration chat_id, so its "old" status defaults to left,
-    # matching this same filter. The is_pending() check right below is what
-    # actually filters that (and the pre-migration chat_id's own join) out —
-    # see app/services/group_creation_registry.py.
+    # PROMOTED_TRANSITION matches any "not admin -> administrator" change for
+    # the bot itself — deliberately narrower than JOIN_TRANSITION (which also
+    # fires the instant the bot is added as a *plain*, non-admin member).
+    # Registering on plain-member-add used to create a group record right
+    # away; if that group was a legacy basic group and the user later
+    # promoted the bot to admin via the Telegram client, Telegram silently
+    # migrates the basic group to a supergroup with a brand-new chat_id —
+    # which then fires its *own* "join" event and created a second, duplicate
+    # group record for what is really the same physical group. Gating on
+    # PROMOTED_TRANSITION means we only ever register once, under the final
+    # chat_id, and only once the bot can actually do anything useful there
+    # (tagging members requires admin's can_manage_tags right anyway).
+    #
+    # This also matches the member -> administrator promotion our own
+    # userbot flow triggers right after creating a group
+    # (app/userbot/actions.py::_promote_assistant_bot) — to the Bot API,
+    # that promotion is the *first* status change it's ever seen for the
+    # post-migration chat_id, so its "old" status defaults to left, which
+    # PROMOTED_TRANSITION's (MEMBER | RESTRICTED | LEFT | KICKED) side still
+    # covers. The is_pending() check right below is what actually filters
+    # that (and the pre-migration chat_id's own join) out — see
+    # app/services/group_creation_registry.py.
     if event.chat.type not in ("group", "supergroup"):
         return
 

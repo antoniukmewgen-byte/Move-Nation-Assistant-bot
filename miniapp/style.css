@@ -675,7 +675,6 @@ button.warning {
   border-radius: 10px;
   font-size: 13px;
   text-align: left;
-  transition: filter 0.15s ease;
 }
 
 .dropdown-menu button:not(.danger):not(.warning) {
@@ -683,11 +682,6 @@ button.warning {
   background: transparent;
   border: none;
   font-weight: 700;
-}
-
-.dropdown-menu button:hover,
-.dropdown-menu button:active {
-  filter: brightness(1.15);
 }
 
 /* Кожна вкладка #main (data-panel="groups"/"profile") сама займає всю
