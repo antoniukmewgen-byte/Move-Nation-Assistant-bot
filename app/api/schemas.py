@@ -12,6 +12,15 @@ class GroupOut(BaseModel):
     title: str
     status: str
     awaiting_response: bool
+    # Показує тиху кнопку синхронізації в Mini App: лише для груп, які
+    # існували ДО підключення бота (created_by_userbot=False) і ще жодного
+    # разу не звірялись (synced_at is None) — див. app/db/models.py::Group.
+    needs_sync: bool = False
+
+
+class GroupSyncOut(BaseModel):
+    updated: int
+    removed: int
 
 
 class MemberOut(BaseModel):

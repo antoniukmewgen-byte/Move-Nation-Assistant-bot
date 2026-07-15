@@ -34,6 +34,10 @@ export function renderGroupList(container, groups) {
     // data-group-id — реальний id групи (не позиція в списку), бо саме він
     // потрібен для /members?group_id= і /groups/{id} при відкритті картки.
     button.dataset.groupId = group.id;
+    // needs_sync — прапорець із GroupOut (group_service.sync_group виставляє
+    // synced_at), читає mainApp.js при відкритті картки групи, щоб показати
+    // чи сховати тиху кнопку синхронізації в дропдауні.
+    button.dataset.needsSync = group.needs_sync ? "1" : "";
     const statusText = group.awaiting_response ? "Очікує відповіді клієнта" : "Активна";
     button.innerHTML = `
       <div class="button-container">

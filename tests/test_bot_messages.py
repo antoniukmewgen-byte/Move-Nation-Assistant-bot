@@ -23,9 +23,18 @@ pytestmark = pytest.mark.asyncio
 class FakeBot:
     def __init__(self) -> None:
         self.sent: list[tuple[int, str]] = []
+        self.got_chat: list[int] = []
 
     async def send_message(self, chat_id: int, text: str, **_kwargs: Any) -> None:
         self.sent.append((chat_id, text))
+
+    async def get_chat(self, chat_id: int, **_kwargs: Any) -> None:
+        # on_bot_added_to_group's silent stale-chat_id check (see the
+        # TelegramMigrateToChat/TelegramBadRequest handling around it) —
+        # the bot no longer posts a welcome message when added to a group,
+        # so this replaces send_message as the network call used to detect
+        # a chat_id that's already migrated away by the time we process it.
+        self.got_chat.append(chat_id)
 
 
 class FakeGroupServiceBot:
@@ -105,10 +114,12 @@ async def test_on_bot_added_to_group_ignores_private_chats(_patch_db) -> None:
         assert await crud.get_group(session, 1) is None
 
 
-async def test_on_bot_added_to_group_registers_new_group_and_greets(_patch_db) -> None:
+async def test_on_bot_added_to_group_registers_new_group_silently(_patch_db) -> None:
     bot = FakeBot()
     event = SimpleNamespace(
-        chat=FakeChat(id=100, type="group", title="Team Chat"), bot=bot, from_user=SimpleNamespace(id=1)
+        chat=FakeChat(id=100, type="group", title="Team Chat"),
+        bot=bot,
+        from_user=FakeUser(id=1, username="alice", full_name="Alice A."),
     )
 
     await messages_handlers.on_bot_added_to_group(event)
@@ -117,9 +128,40 @@ async def test_on_bot_added_to_group_registers_new_group_and_greets(_patch_db) -
         group = await crud.get_group(session, 100)
         assert group is not None
         assert group.title == "Team Chat"
+        # The actor has no Role in the DB (not a known staff member), so
+        # they must NOT get an auto-membership row — group_members is the
+        # only authorization check on /groups and /members (see
+        # app/api/deps.py::get_verified_user_id, which never looks at
+        # Role), so auto-registering an arbitrary Telegram user here would
+        # let anyone self-grant full Mini App control over any chat just by
+        # adding the bot to it. The group stays registered but invisible/
+        # uncontrollable until a real staff member syncs it.
+        members = await crud.get_group_members(session, 100)
+        assert members == []
 
-    assert len(bot.sent) == 1
-    assert bot.sent[0][0] == 100
+    # No message posted to the group — just the silent existence check.
+    assert bot.sent == []
+    assert bot.got_chat == [100]
+
+
+async def test_on_bot_added_to_group_registers_actor_with_an_existing_role(_patch_db) -> None:
+    async with _patch_db() as session:
+        await crud.get_or_create_user(session, 1, "alice", "Alice A.")
+        await crud.set_user_role(session, 1, Role.MANAGER)
+        await session.commit()
+
+    bot = FakeBot()
+    event = SimpleNamespace(
+        chat=FakeChat(id=100, type="group", title="Team Chat"),
+        bot=bot,
+        from_user=FakeUser(id=1, username="alice", full_name="Alice A."),
+    )
+
+    await messages_handlers.on_bot_added_to_group(event)
+
+    async with _patch_db() as session:
+        members = await crud.get_group_members(session, 100)
+        assert [(m.user_id, m.tag) for m in members] == [(1, Role.MANAGER.value)]
 
 
 async def test_on_bot_added_to_group_skips_actors_pending_our_own_group_creation(
@@ -135,7 +177,9 @@ async def test_on_bot_added_to_group_skips_actors_pending_our_own_group_creation
 
     bot = FakeBot()
     event = SimpleNamespace(
-        chat=FakeChat(id=100, type="supergroup", title="Team Chat"), bot=bot, from_user=SimpleNamespace(id=42)
+        chat=FakeChat(id=100, type="supergroup", title="Team Chat"),
+        bot=bot,
+        from_user=FakeUser(id=42, username="staffer", full_name="Staff Member"),
     )
 
     await messages_handlers.on_bot_added_to_group(event)

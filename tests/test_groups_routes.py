@@ -47,6 +47,21 @@ async def test_list_groups_returns_only_groups_the_user_belongs_to(_patch_db) ->
 
     assert [g.title for g in result] == ["Group One"]
     assert result[0].awaiting_response is False
+    # created_by_userbot=True (created through the app itself) never needs
+    # the Mini App's silent-sync button.
+    assert result[0].needs_sync is False
+
+
+async def test_list_groups_flags_pre_existing_unsynced_group_as_needs_sync(_patch_db) -> None:
+    async with _patch_db() as session:
+        await crud.get_or_create_user(session, 1, "alice", "Alice A.")
+        g1 = await crud.create_group_record(session, 100, "Group One", created_by_userbot=False)
+        await crud.add_member_tag(session, g1.id, 1, "Менеджер")
+        await session.commit()
+
+    result = await groups_routes.list_groups(user_id=1)
+
+    assert result[0].needs_sync is True
 
 
 async def test_create_group_requires_a_connected_session(_patch_db) -> None:
@@ -135,6 +150,105 @@ async def test_create_group_translates_unexpected_error_to_502(
 
     assert exc_info.value.status_code == 502
     assert "Не вдалося створити групу" in caplog.text
+
+
+async def test_sync_group_route_requires_membership(_patch_db) -> None:
+    async with _patch_db() as session:
+        await crud.get_or_create_user(session, 1, "alice", "Alice A.")
+        await crud.create_group_record(session, 100, "Group One", created_by_userbot=False)
+        await session.commit()
+
+    with pytest.raises(HTTPException) as exc_info:
+        await groups_routes.sync_group(100, requested_by=1)
+
+    assert exc_info.value.status_code == 403
+
+
+async def test_sync_group_route_returns_404_for_unknown_group_as_403(_patch_db) -> None:
+    # Same access-denied response as an unowned group — never leaks whether
+    # a group_id exists at all to a caller who isn't a member of it.
+    async with _patch_db() as session:
+        await crud.get_or_create_user(session, 1, "alice", "Alice A.")
+        await session.commit()
+
+    with pytest.raises(HTTPException) as exc_info:
+        await groups_routes.sync_group(999, requested_by=1)
+
+    assert exc_info.value.status_code == 403
+
+
+async def test_sync_group_route_calls_service_and_returns_counts(
+    _patch_db, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async with _patch_db() as session:
+        await crud.get_or_create_user(session, 1, "alice", "Alice A.")
+        group = await crud.create_group_record(session, 100, "Group One", created_by_userbot=False)
+        await crud.add_member_tag(session, group.id, 1, "Менеджер")
+        await session.commit()
+
+    async def fake_sync_group(actor_user_id, group_id, title):
+        assert (actor_user_id, group_id, title) == (1, 100, "Group One")
+        return 3, 1
+
+    monkeypatch.setattr(group_service, "sync_group", fake_sync_group)
+
+    result = await groups_routes.sync_group(100, requested_by=1)
+
+    assert result.updated == 3
+    assert result.removed == 1
+
+
+async def test_sync_group_route_translates_not_connected_to_400(_patch_db) -> None:
+    async with _patch_db() as session:
+        await crud.get_or_create_user(session, 1, "alice", "Alice A.")
+        group = await crud.create_group_record(session, 100, "Group One", created_by_userbot=False)
+        await crud.add_member_tag(session, group.id, 1, "Менеджер")
+        await session.commit()
+
+    with pytest.raises(HTTPException) as exc_info:
+        await groups_routes.sync_group(100, requested_by=1)
+
+    assert exc_info.value.status_code == 400
+
+
+async def test_sync_group_route_translates_flood_wait_to_429(
+    _patch_db, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async with _patch_db() as session:
+        await crud.get_or_create_user(session, 1, "alice", "Alice A.")
+        group = await crud.create_group_record(session, 100, "Group One", created_by_userbot=False)
+        await crud.add_member_tag(session, group.id, 1, "Менеджер")
+        await session.commit()
+
+    async def fake_sync_group(*_args):
+        raise FloodWaitError(request=None, capture=30)
+
+    monkeypatch.setattr(group_service, "sync_group", fake_sync_group)
+
+    with pytest.raises(HTTPException) as exc_info:
+        await groups_routes.sync_group(100, requested_by=1)
+
+    assert exc_info.value.status_code == 429
+
+
+async def test_sync_group_route_translates_sync_failure_to_502(
+    _patch_db, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async with _patch_db() as session:
+        await crud.get_or_create_user(session, 1, "alice", "Alice A.")
+        group = await crud.create_group_record(session, 100, "Group One", created_by_userbot=False)
+        await crud.add_member_tag(session, group.id, 1, "Менеджер")
+        await session.commit()
+
+    async def fake_sync_group(*_args):
+        raise group_service.GroupSyncFailedError()
+
+    monkeypatch.setattr(group_service, "sync_group", fake_sync_group)
+
+    with pytest.raises(HTTPException) as exc_info:
+        await groups_routes.sync_group(100, requested_by=1)
+
+    assert exc_info.value.status_code == 502
 
 
 async def test_remove_group_requires_membership(_patch_db) -> None:

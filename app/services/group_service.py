@@ -17,6 +17,7 @@ so it propagates as-is and each caller catches it directly.
 from __future__ import annotations
 
 import logging
+from datetime import datetime
 from html import escape
 
 from aiogram.exceptions import TelegramBadRequest
@@ -385,7 +386,7 @@ async def sync_group(actor_user_id: int, group_id: int, title: str) -> tuple[int
     removed_ids: list[int] = []
 
     async with async_session() as session:
-        await crud.create_group_record(session, group_id, title, created_by_userbot=False)
+        group = await crud.create_group_record(session, group_id, title, created_by_userbot=False)
         current_members = await crud.get_group_members(session, group_id)
         current_user_ids = {member.user_id for member in current_members}
 
@@ -400,6 +401,14 @@ async def sync_group(actor_user_id: int, group_id: int, title: str) -> tuple[int
         for user_id in current_user_ids - scanned_ids:
             if await crud.remove_member(session, group_id, user_id):
                 removed_ids.append(user_id)
+
+        # Виставляється щоразу, коли скан дійшов до кінця без винятків —
+        # навіть якщо конкретно цього разу нічого не змінилось. Разом із
+        # created_by_userbot визначає GroupOut.needs_sync (app/api/schemas.py):
+        # тиху кнопку синхронізації в Mini App (POST /groups/{id}/sync) чи
+        # ручний /sync у чаті — байдуже, звідки викликано, обидва йдуть саме
+        # сюди, тож обидва однаково ховають кнопку назавжди після першого разу.
+        group.synced_at = datetime.utcnow()
 
         await session.commit()
 

@@ -205,6 +205,34 @@ async def test_sync_group_replaces_a_stale_tag_when_role_changed_since_last_sync
         assert [m.tag for m in members] == [Role.TEAMLEAD.value]
 
 
+async def test_sync_group_sets_synced_at_timestamp(_patch_db, monkeypatch: pytest.MonkeyPatch) -> None:
+    """`synced_at` is what makes the Mini App's silent-sync button hide for
+    good (see Group.synced_at in app/db/models.py and GroupOut.needs_sync) —
+    must be None before the first sync and set after any successful one,
+    even a no-op run that changes nothing.
+    """
+    async with _patch_db() as session:
+        await crud.get_or_create_user(session, 1, "alice", "Alice A.")
+        await crud.set_user_session(session, 1, "encrypted-session-string")
+        group = await crud.create_group_record(session, 100, "Team Chat", created_by_userbot=False)
+        await session.commit()
+        assert group.synced_at is None
+
+    monkeypatch.setattr(group_service, "decrypt_session", lambda s: s)
+
+    async def fake_scan(*_args):
+        return [(1, "alice", "Alice A.", False)]
+
+    monkeypatch.setattr(group_service, "scan_group_members", fake_scan)
+
+    await group_service.sync_group(1, 100, "Team Chat")
+
+    async with _patch_db() as session:
+        group = await crud.get_group(session, 100)
+        assert group is not None
+        assert group.synced_at is not None
+
+
 async def test_sync_group_removes_members_the_scan_no_longer_sees(
     _patch_db, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -57,6 +57,14 @@ class Group(Base):
     status: Mapped[GroupStatus] = mapped_column(SAEnum(GroupStatus), default=GroupStatus.ACTIVE)
     created_by_userbot: Mapped[bool] = mapped_column(Boolean, default=False)
     registered_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    # None до першого успішного group_service.sync_group (звідки б його не
+    # викликали — /sync у чаті чи тиха кнопка в Mini App, POST /groups/{id}/
+    # sync, app/api/routes/groups.py). Разом з created_by_userbot визначає
+    # needs_sync у GroupOut: кнопка синхронізації в Mini App показується
+    # лише для груп, які існували ДО підключення бота (created_by_userbot
+    # =False) і ще жодного разу не звірялись — після успішної звірки
+    # ховається назавжди, а не лише на поточну сесію.
+    synced_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     last_message_from_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     last_message_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

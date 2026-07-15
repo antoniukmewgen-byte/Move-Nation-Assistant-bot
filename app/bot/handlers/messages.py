@@ -46,6 +46,8 @@ async def on_bot_added_to_group(event: ChatMemberUpdated) -> None:
         # app/services/group_creation_registry.py).
         return
 
+    newly_registered_actor_id: int | None = None
+
     async with async_session() as session:
         group = await crud.get_group(session, event.chat.id)
         if group is None:
@@ -53,12 +55,13 @@ async def on_bot_added_to_group(event: ChatMemberUpdated) -> None:
             if bot is None:
                 return
             try:
-                await bot.send_message(
-                    event.chat.id,
-                    "Я підключився до цієї групи. Щоб я міг стежити за повідомленнями клієнтів, "
-                    "признач мене адміністратором і виконай команду /sync — вона сама позначить "
-                    "усіх учасників тегами.",
-                )
+                # A silent existence check, not a message to the group —
+                # we don't want the bot posting anything when it's added.
+                # Still serves the same purpose the old welcome message's
+                # network call used to: catching a stale, already-migrated
+                # chat_id before registering a bogus duplicate group record
+                # (see the except blocks below).
+                await bot.get_chat(event.chat.id)
             except TelegramMigrateToChat:
                 # This chat_id belonged to a basic group that got migrated to a
                 # supergroup between Telegram queuing this "bot was added"
@@ -83,7 +86,34 @@ async def on_bot_added_to_group(event: ChatMemberUpdated) -> None:
             await crud.create_group_record(
                 session, event.chat.id, event.chat.title or "Без назви", created_by_userbot=False
             )
+
+            # Без цього group_members лишається порожнім і crud.get_groups_for_user
+            # (JOIN на group_members) взагалі не покаже цю групу в списку Mini
+            # App — а без неї в списку недосяжна й тиха кнопка синхронізації
+            # (GroupOut.needs_sync), бо вона рендериться лише для вже видимих
+            # груп. Тож реєструємо того, хто додав бота, учасником одразу —
+            # АЛЕ лише якщо це вже оформлений співробітник (є Role у БД),
+            # той самий staff-гейт, що й у cmd_sync нижче. group_members —
+            # єдина авторизація на /groups та /members (get_verified_user_id
+            # у app/api/deps.py взагалі не дивиться на Role), тож без цього
+            # гейту будь-який випадковий Telegram-користувач, додавши бота в
+            # довільний чужий чат, сам собі видав би group_members-рядок і
+            # разом з ним повний доступ через Mini App (перегляд/додавання
+            # клієнтів, видалення учасників, видалення самої групи, sync) —
+            # раніше цей шлях був недоступний без Role чи /connect. Людина
+            # без Role тут просто нічого не отримує; group залишається
+            # незареєстрованою для неї, доки її не звірить справжній
+            # співробітник через /sync чи цю саму кнопку.
+            actor = event.from_user
+            db_user = await crud.get_or_create_user(session, actor.id, actor.username, actor.full_name)
+            if db_user.role is not None:
+                await crud.add_member_tag(session, event.chat.id, actor.id, db_user.role.value)
+                newly_registered_actor_id = actor.id
+
             await session.commit()
+
+    if newly_registered_actor_id is not None:
+        await realtime.notify_users([newly_registered_actor_id], {"type": "groups_changed"})
 
 
 @router.my_chat_member(ChatMemberUpdatedFilter(member_status_changed=LEAVE_TRANSITION))

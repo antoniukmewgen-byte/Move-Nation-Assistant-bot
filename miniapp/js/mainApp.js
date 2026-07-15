@@ -42,6 +42,7 @@ const groupDetailTitleEl = document.getElementById("group-detail-title");
 const groupDetailBackEl = document.getElementById("group-detail-back");
 const groupDetailMenuEl = document.getElementById("group-detail-menu");
 const groupDetailDropdownEl = document.getElementById("group-detail-dropdown");
+const groupDetailSyncEl = document.getElementById("group-detail-sync");
 const groupDetailDeleteEl = document.getElementById("group-detail-delete");
 const memberInputEl = document.getElementById("member-input");
 const memberSubmitEl = document.getElementById("member-submit");
@@ -155,7 +156,8 @@ if (groupListEl) {
 
     const groupId = Number(button.dataset.groupId);
     const title = button.querySelector(".label-list-button")?.textContent ?? "";
-    openGroupDetail(groupId, title);
+    const needsSync = button.dataset.needsSync === "1";
+    openGroupDetail(groupId, title, needsSync);
   });
 }
 
@@ -193,12 +195,16 @@ setupStepForm({
 
 // --- group detail (drill-down) ---
 
-async function openGroupDetail(groupId, title) {
+async function openGroupDetail(groupId, title, needsSync = false) {
   selectedGroupId = groupId;
   if (groupDetailTitleEl) groupDetailTitleEl.textContent = title;
   if (memberInputEl) memberInputEl.value = "";
   if (memberErrorEl && !memberErrorEl.hidden) fadeOut(memberErrorEl);
   if (memberListEl) memberListEl.innerHTML = "";
+  // Кнопка тихої синхронізації — лише для груп, які існували ДО підключення
+  // бота і ще жодного разу не звірялись (GroupOut.needs_sync). Ховається
+  // назавжди після першого успішного sync (syncSelectedGroup нижче).
+  if (groupDetailSyncEl) groupDetailSyncEl.hidden = !needsSync;
 
   showStep("group-detail");
   await fetchMembers(groupId);
@@ -232,6 +238,33 @@ if (groupDetailMenuEl && groupDetailDropdownEl) {
     if (event.target.closest("#group-detail-dropdown, #group-detail-menu")) return;
     closeGroupMenu();
   });
+}
+
+if (groupDetailSyncEl) {
+  groupDetailSyncEl.addEventListener("click", () => {
+    closeGroupMenu();
+    syncSelectedGroup();
+  });
+}
+
+async function syncSelectedGroup() {
+  const groupId = selectedGroupId;
+  if (groupId === null) return;
+
+  const res = await apiFetch(`/groups/${groupId}/sync`, { method: "POST" });
+  const data = await safeJson(res);
+  if (!res.ok) {
+    showToast(`Помилка: ${data.detail || "спробуй ще раз."}`, "error");
+    return;
+  }
+
+  // Успішна синхронізація — назавжди ховаємо кнопку (Group.synced_at уже
+  // виставлений на бекенді), оновлюємо список учасників картки й лічильники
+  // на екрані груп (needs_sync там теж мав змінитись).
+  if (groupDetailSyncEl) groupDetailSyncEl.hidden = true;
+  showToast("Групу синхронізовано");
+  await fetchMembers(groupId);
+  await fetchGroups();
 }
 
 if (groupDetailDeleteEl) {

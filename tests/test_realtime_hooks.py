@@ -332,6 +332,50 @@ async def test_finish_notifies_profile_changed(
 # --- bot handlers (app/bot/handlers/messages.py) -------------------------------
 
 
+class _FakeBotAddedBot:
+    """Minimal `event.bot` stub for on_bot_added_to_group's silent get_chat check."""
+
+    async def get_chat(self, *_args, **_kwargs) -> None:
+        return None
+
+
+async def test_on_bot_added_to_group_notifies_the_staff_actor(
+    _patch_db, _patch_realtime: _NotifyRecorder
+) -> None:
+    async with _patch_db() as session:
+        await crud.get_or_create_user(session, 1, "alice", "Alice A.")
+        await crud.set_user_role(session, 1, Role.MANAGER)
+        await session.commit()
+
+    event = SimpleNamespace(
+        chat=FakeChat(id=100, type="supergroup", title="Team Chat"),
+        bot=_FakeBotAddedBot(),
+        from_user=FakeUser(id=1, username="alice", full_name="Alice A."),
+    )
+
+    await messages_handlers.on_bot_added_to_group(event)
+
+    assert _patch_realtime.notify_users_calls == [({1}, {"type": "groups_changed"})]
+
+
+async def test_on_bot_added_to_group_sends_no_notification_for_a_non_staff_actor(
+    _patch_db, _patch_realtime: _NotifyRecorder
+) -> None:
+    # No Role assigned to user 1 — auto-registering (and thus notifying)
+    # them would let an arbitrary Telegram user self-grant Mini App access
+    # to any chat just by adding the bot to it (see the gate this covers in
+    # on_bot_added_to_group).
+    event = SimpleNamespace(
+        chat=FakeChat(id=100, type="supergroup", title="Team Chat"),
+        bot=_FakeBotAddedBot(),
+        from_user=FakeUser(id=1, username="alice", full_name="Alice A."),
+    )
+
+    await messages_handlers.on_bot_added_to_group(event)
+
+    assert _patch_realtime.notify_users_calls == []
+
+
 async def test_on_bot_removed_from_group_notifies_former_members(
     _patch_db, _patch_realtime: _NotifyRecorder
 ) -> None:

@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from telethon.errors import FloodWaitError
 
 from app.api.deps import get_verified_user_id
-from app.api.schemas import GroupCreateRequest, GroupOut
+from app.api.schemas import GroupCreateRequest, GroupOut, GroupSyncOut
 from app.db import crud
 from app.db.session import async_session
 from app.services import group_service, realtime
@@ -21,7 +21,13 @@ async def list_groups(user_id: int = Depends(get_verified_user_id)) -> list[Grou
     async with async_session() as session:
         groups = await crud.get_groups_for_user(session, user_id)
         return [
-            GroupOut(id=g.id, title=g.title, status=g.status.value, awaiting_response=g.awaiting_response)
+            GroupOut(
+                id=g.id,
+                title=g.title,
+                status=g.status.value,
+                awaiting_response=g.awaiting_response,
+                needs_sync=not g.created_by_userbot and g.synced_at is None,
+            )
             for g in groups
         ]
 
@@ -44,6 +50,38 @@ async def create_group(
         raise HTTPException(status_code=502, detail="Не вдалося створити групу. Спробуй пізніше.") from exc
 
     return GroupOut(id=group.id, title=group.title, status=group.status.value, awaiting_response=False)
+
+
+@router.post("/{group_id}/sync", response_model=GroupSyncOut)
+async def sync_group(group_id: int, requested_by: int = Depends(get_verified_user_id)) -> GroupSyncOut:
+    """Тиха версія /sync для Mini App — без жодних повідомлень у чат групи.
+
+    На відміну від cmd_sync (app/bot/handlers/messages.py), тут немає
+    "Сканую…"/"Готово…" — group_service.sync_group і так нічого не пише в
+    чат сама по собі, ці повідомлення надсилав саме викликач-хендлер команди.
+    Кнопка в Mini App ховається назавжди після першого успіху завдяки
+    Group.synced_at, який виставляє сам sync_group.
+    """
+    async with async_session() as session:
+        group = await crud.get_group(session, group_id)
+        if group is None or not await crud.user_is_group_member(session, group_id, requested_by):
+            raise HTTPException(status_code=403, detail="Немає доступу до цієї групи")
+        title = group.title
+
+    try:
+        updated, removed = await group_service.sync_group(requested_by, group_id, title)
+    except group_service.NotConnectedError as exc:
+        raise HTTPException(
+            status_code=400, detail="Спочатку підключи Telegram-акаунт через /connect"
+        ) from exc
+    except FloodWaitError as exc:
+        raise HTTPException(
+            status_code=429, detail=f"Забагато запитів до Telegram, спробуй через {exc.seconds} с"
+        ) from exc
+    except group_service.GroupSyncFailedError as exc:
+        raise HTTPException(status_code=502, detail="Не вдалося синхронізувати групу. Спробуй пізніше.") from exc
+
+    return GroupSyncOut(updated=updated, removed=removed)
 
 
 @router.delete("/{group_id}")
