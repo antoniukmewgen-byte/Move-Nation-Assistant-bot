@@ -49,7 +49,7 @@ function createRipple(event, button) {
 // (icon-list-button, зокрема й аватарки-ініціали в member-list.js).
 document.addEventListener("pointerdown", (event) => {
   const button = event.target.closest(
-    ".primary, .danger, .tab-btn, button.icon-list-button, button.list-button, .member-delete, .link-button"
+    ".primary, .danger, .warning, .tab-btn, button.icon-list-button, button.list-button, .member-delete, .link-button"
   );
   if (button) {
     createRipple(event, button);

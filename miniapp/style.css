@@ -558,7 +558,8 @@ input::placeholder {
 }
 
 button.primary,
-button.danger {
+button.danger,
+button.warning {
   position: relative;
   overflow: hidden;
   padding: 14px;
@@ -578,6 +579,16 @@ button.danger {
   color: var(--danger);
   background: rgba(255, 107, 122, 0.08);
   border: 1px solid rgba(255, 107, 122, 0.4);
+}
+
+/* Жовта — для нейтрально-позитивних, але не фінальних дій (наприклад,
+   тиха синхронізація групи), щоб відрізнялась і від .primary (brand),
+   і від .danger (руйнівна дія). Той самий rgba-паттерн, що й у .danger,
+   під колір --warning. */
+button.warning {
+  color: var(--warning);
+  background: rgba(255, 180, 84, 0.08);
+  border: 1px solid rgba(255, 180, 84, 0.4);
 }
 
 .lock-note {
@@ -651,7 +662,32 @@ button.danger {
   z-index: 10;
   min-width: 160px;
   padding: 8px;
-  gap: 8px;
+  gap: 4px;
+}
+
+/* Пункти меню — компактніші й вирівняні по лівому краю, на відміну від
+   повнорозмірних .primary/.danger/.warning деінде (форми на всю ширину
+   екрана). Самі кольорові варіанти (.danger, .warning) успадковуються
+   від базових класів вище — тут лише перевизначаємо форму під тісний
+   список, не чіпаючи колір. */
+.dropdown-menu button {
+  padding: 12px 14px;
+  border-radius: 10px;
+  font-size: 13px;
+  text-align: left;
+  transition: filter 0.15s ease;
+}
+
+.dropdown-menu button:not(.danger):not(.warning) {
+  color: var(--text);
+  background: transparent;
+  border: none;
+  font-weight: 700;
+}
+
+.dropdown-menu button:hover,
+.dropdown-menu button:active {
+  filter: brightness(1.15);
 }
 
 /* Кожна вкладка #main (data-panel="groups"/"profile") сама займає всю
