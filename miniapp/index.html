@@ -37,34 +37,23 @@
         <div class="role-list" id="role-list" role="radiogroup" aria-label="Посада"></div>
       </div>
     </div>
-    <!-- 2 етап -->
-    <div class="flex-fill" data-step="2" data-title="Номер телефону" data-lock-note hidden>
-      <div class="input-box">
-        <div class="card-container">
-          <div class="role-list">
-            <input type="tel" id="phone-input" placeholder="+380ХХХХХХХХХ" aria-label="Номер телефону" inputmode="tel"
-              autocomplete="tel" />
-            <button type="button" class="primary" id="phone-submit">Надіслати код</button>
-          </div>
+    <!-- 2 етап: QR-логін замість телефон+код — client.qr_login() на бекенді,
+         фронтенд лише показує картинку й опитує /auth/qr/poll (connect.js) -->
+    <div class="flex-fill" data-step="2" data-title="QR-код" data-lock-note hidden>
+      <div class="qr-box card-container">
+        <div class="qr-image-wrap">
+          <img id="qr-image" alt="QR-код для входу в Telegram" />
         </div>
-        <span class="input-error" id="phone-error" role="alert" hidden></span>
+        <a id="qr-open-link" class="primary" href="#" target="_blank" rel="noopener">Відкрити в Telegram</a>
+        <div class="qr-status">
+          <span class="spinner" aria-hidden="true"></span>
+          <span id="qr-status-text">Очікую на сканування…</span>
+        </div>
+        <span class="input-error" id="qr-error" role="alert" hidden></span>
       </div>
     </div>
-    <!-- 3 етап -->
-    <div class="flex-fill" data-step="3" data-title="Код з телеграм" data-lock-note hidden>
-      <div class="input-box">
-        <div class="card-container">
-          <div class="role-list">
-            <input type="text" id="code-input" placeholder="Введи код" aria-label="Код підтвердження"
-              inputmode="numeric" autocomplete="one-time-code" />
-            <button type="button" class="primary" id="code-submit">Підтвердити</button>
-          </div>
-        </div>
-        <span class="input-error" id="code-error" role="alert" hidden></span>
-      </div>
-    </div>
-    <!-- 4 етап (лише якщо на акаунті ввімкнена двоетапна перевірка) -->
-    <div class="flex-fill" data-step="4" data-title="Пароль (2FA)" data-lock-note hidden>
+    <!-- 3 етап (лише якщо на акаунті ввімкнена двоетапна перевірка) -->
+    <div class="flex-fill" data-step="3" data-title="Пароль (2FA)" data-lock-note hidden>
       <div class="input-box">
         <div class="card-container">
           <div class="role-list">

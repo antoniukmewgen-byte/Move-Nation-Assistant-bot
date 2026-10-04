@@ -64,18 +64,12 @@ class UserMeOut(BaseModel):
     phone: str | None = None
 
 
-class PhoneRequest(BaseModel):
-    phone: str = Field(min_length=5, max_length=20)
-
-
-class CodeRequest(BaseModel):
-    code: str = Field(min_length=3, max_length=10)
-
-
 class PasswordRequest(BaseModel):
     password: str = Field(min_length=1, max_length=256)
 
 
 class AuthStatusOut(BaseModel):
     status: str
+    qr_url: str | None = None
+    qr_image: str | None = None
     error: str | None = None

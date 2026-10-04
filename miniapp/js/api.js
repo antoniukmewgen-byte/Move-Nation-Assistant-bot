@@ -32,8 +32,8 @@ export async function apiFetch(path, options = {}) {
 // produce a proper `{status, error}` payload (e.g. an unhandled exception ->
 // bare 500), `res.json()` itself throws on the empty/HTML body. Without this,
 // callers would throw uncaught and the UI would silently freeze on
-// "Надсилаю код…" forever with no feedback — exactly what happened when
-// start_phone_auth could raise unexpected Telethon errors.
+// "Генерую QR-код…" forever with no feedback — exactly what happened when
+// start_qr_auth could raise unexpected Telethon errors.
 export async function safeJson(res) {
   try {
     return await res.json();

@@ -1,9 +1,8 @@
 // Whether the password (2FA) step actually exists is only known once the
-// user has submitted their SMS code — Telegram doesn't expose "does this
-// account have 2FA enabled?" ahead of that exchange (see connect.js's
-// "password_required" handling). Until then the stepper assumes the common
-// case (no 2FA -> 3 total steps) instead of always counting a step most
-// accounts will never see.
+// QR code has been scanned — Telegram doesn't expose "does this account
+// have 2FA enabled?" ahead of that (see connect.js's "password_required"
+// handling). Until then the stepper assumes the common case (no 2FA -> 2
+// total steps) instead of always counting a step most accounts never see.
 let passwordStepNeeded = false;
 
 export function markPasswordStepNeeded() {
@@ -11,7 +10,7 @@ export function markPasswordStepNeeded() {
 }
 
 export function getTotalSteps() {
-  return passwordStepNeeded ? 4 : 3;
+  return passwordStepNeeded ? 3 : 2;
 }
 
 // Reset when a fresh registration starts (bootstrap on a brand new open) —

@@ -2,7 +2,7 @@
 // behavior changes. Drives the onboarding progress dots in onboarding.js.
 
 // Підписи кроків для aria-label — без цього скрінрідер бачить лише "порожній елемент списку".
-export const ROLE_STEPPER_LABELS = ["Посада", "Телефон", "Код", "Пароль"];
+export const ROLE_STEPPER_LABELS = ["Посада", "QR-код", "Пароль"];
 
 // Рахує стан кожного кроку відносно current:
 // усе до нього — "done", сам він — "active", решта — "upcoming".

@@ -14,10 +14,8 @@ from pydantic import ValidationError
 
 from app.api.schemas import (
     AddClientRequest,
-    CodeRequest,
     GroupCreateRequest,
     PasswordRequest,
-    PhoneRequest,
     RoleRequest,
     TagRequest,
 )
@@ -110,51 +108,6 @@ def test_role_rejects_too_long() -> None:
 def test_role_accepts_boundary_lengths() -> None:
     assert RoleRequest(role="a").role == "a"
     assert RoleRequest(role="a" * 32).role == "a" * 32
-
-
-# --- PhoneRequest.phone: min_length=5, max_length=20 ------------------------
-# Note: actual phone-number *format* validation (leading "+", digits only,
-# etc.) is Telethon/Telegram's job at the `send_code_request` call in
-# telethon_auth.py, not this schema's — it only bounds the length so an
-# empty or absurdly long string can't reach that call.
-
-
-def test_phone_rejects_too_short() -> None:
-    with pytest.raises(ValidationError):
-        PhoneRequest(phone="123")
-
-
-def test_phone_rejects_too_long() -> None:
-    with pytest.raises(ValidationError):
-        PhoneRequest(phone="1" * 21)
-
-
-def test_phone_accepts_boundary_lengths() -> None:
-    assert PhoneRequest(phone="12345").phone == "12345"
-    assert PhoneRequest(phone="1" * 20).phone == "1" * 20
-
-
-def test_phone_rejects_missing_field() -> None:
-    with pytest.raises(ValidationError):
-        PhoneRequest()  # type: ignore[call-arg]
-
-
-# --- CodeRequest.code: min_length=3, max_length=10 --------------------------
-
-
-def test_code_rejects_too_short() -> None:
-    with pytest.raises(ValidationError):
-        CodeRequest(code="12")
-
-
-def test_code_rejects_too_long() -> None:
-    with pytest.raises(ValidationError):
-        CodeRequest(code="1" * 11)
-
-
-def test_code_accepts_boundary_lengths() -> None:
-    assert CodeRequest(code="123").code == "123"
-    assert CodeRequest(code="1" * 10).code == "1" * 10
 
 
 # --- PasswordRequest.password: min_length=1, max_length=256 -----------------

@@ -1,83 +1,105 @@
 import { apiFetch, safeJson } from "./api.js";
 import { setupStepForm } from "./step-form.js";
+import { fadeIn, fadeOut } from "./transitions.js";
 import { goToStep, finishRegistration } from "./onboarding.js";
 import { markPasswordStepNeeded } from "./progress.js";
 
-// --- Account connect: phone -> code -> (optional) 2FA password, as steps
-// 2-4 of the unified #role-step stepper (see onboarding.js). Each form uses
-// DESIGN's setupStepForm (busy state + input-error display), with
-// submitAction doing the real request instead of DESIGN's wait(ms) mock. ---
+// --- Account connect: QR login -> (optional) 2FA password, as steps 2-3 of
+// the unified #role-step stepper (see onboarding.js). Telethon's
+// client.qr_login() generates a tg://login token that expires in ~30s; this
+// module shows it as a QR image + "Open in Telegram" deep link, then short-
+// polls /auth/qr/poll until it's scanned, renewed (token expired, server
+// handed back a fresh one), or the attempt errors out. ---
 
-// Accepts common ways people actually type a Ukrainian mobile number —
-// `+380501234567`, `380501234567`, `0501234567`, or just `501234567` — and
-// normalizes all of them to the full `+380...` form the backend/Telethon
-// expects, instead of forcing the user to type the country code themselves.
-function normalizePhone(raw) {
-  const digits = raw.replace(/\D/g, "");
-  if (digits.startsWith("380")) return `+${digits}`;
-  if (digits.startsWith("0")) return `+380${digits.slice(1)}`;
-  if (digits.length === 9) return `+380${digits}`;
-  return raw.startsWith("+") ? raw : `+${digits}`;
+const qrImageEl = document.getElementById("qr-image");
+const qrOpenLinkEl = document.getElementById("qr-open-link");
+const qrStatusTextEl = document.getElementById("qr-status-text");
+const qrErrorEl = document.getElementById("qr-error");
+
+// poll_qr_auth() on the backend already blocks for ~1.5s per call (it's
+// wrapping Telethon's own QRLogin.wait(timeout=...)), so this is just the
+// gap between one poll's response and firing the next — not the actual
+// wait-for-scan interval.
+const POLL_GAP_MS = 400;
+
+// Bumped every time QR polling (re)starts — lets an in-flight poll loop
+// notice it's been superseded (step re-entered, registration finished some
+// other way) and stop touching the DOM instead of needing manual cancellation.
+let pollGeneration = 0;
+
+function setQrError(message) {
+  if (!qrErrorEl) return;
+  if (message) {
+    qrErrorEl.textContent = message;
+    if (qrErrorEl.hidden) fadeIn(qrErrorEl);
+  } else if (!qrErrorEl.hidden) {
+    fadeOut(qrErrorEl);
+  }
 }
 
-function isNonEmptyPhone(value) {
-  return value.trim().length > 0;
+function renderQr(data) {
+  if (qrImageEl) qrImageEl.src = data.qr_image;
+  if (qrOpenLinkEl) qrOpenLinkEl.href = data.qr_url;
 }
 
-setupStepForm({
-  inputEl: document.getElementById("phone-input"),
-  submitEl: document.getElementById("phone-submit"),
-  errorEl: document.getElementById("phone-error"),
-  isValid: isNonEmptyPhone,
-  errorMessage: "Введи номер телефону",
-  busyText: "Надсилаю код...",
-  submitAction: async (rawPhone) => {
-    const phone = normalizePhone(rawPhone.trim());
-    const res = await apiFetch("/auth/phone", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ phone }),
-    });
+async function pollLoop(generation) {
+  while (generation === pollGeneration) {
+    const res = await apiFetch("/auth/qr/poll", { method: "POST" });
     const data = await safeJson(res);
-    if (data.status !== "code_sent") {
-      throw new Error(data.error || "Не вдалося надіслати код. Спробуй ще раз.");
-    }
-  },
-  onComplete: () => goToStep(3),
-});
 
-function isNonEmptyCode(value) {
-  return value.trim().length > 0;
-}
+    if (generation !== pollGeneration) return;
 
-setupStepForm({
-  inputEl: document.getElementById("code-input"),
-  submitEl: document.getElementById("code-submit"),
-  errorEl: document.getElementById("code-error"),
-  isValid: isNonEmptyCode,
-  errorMessage: "Введи код із Telegram",
-  busyText: "Підтверджую...",
-  submitAction: async (code) => {
-    const res = await apiFetch("/auth/code", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ code: code.trim() }),
-    });
-    const data = await safeJson(res);
-    if (data.status === "connected" || data.status === "password_required") {
-      return data.status;
+    if (data.status === "waiting") {
+      await new Promise((resolve) => window.setTimeout(resolve, POLL_GAP_MS));
+      continue;
     }
-    throw new Error(data.error || "Код невірний. Спробуй ще раз.");
-  },
-  onComplete: (status) => {
-    if (status === "password_required") {
+
+    if (data.status === "qr_renewed") {
+      renderQr(data);
+      continue;
+    }
+
+    if (data.status === "password_required") {
       markPasswordStepNeeded();
-      goToStep(4);
-    } else {
-      finishRegistration();
+      goToStep(3);
+      return;
     }
-  },
-});
+
+    if (data.status === "connected") {
+      finishRegistration();
+      return;
+    }
+
+    // status === "error"
+    setQrError(data.error || "Не вдалося увійти. Спробуй ще раз.");
+    if (qrStatusTextEl) qrStatusTextEl.textContent = "Спробуй оновити QR-код.";
+    return;
+  }
+}
+
+// Called from onboarding.js right after the role step completes and the
+// stepper moves to step 2 — the QR step has no submit button of its own
+// (unlike the old phone/code forms), it starts as soon as it's shown.
+export async function startQrLogin() {
+  const generation = ++pollGeneration;
+  setQrError(null);
+  if (qrStatusTextEl) qrStatusTextEl.textContent = "Генерую QR-код…";
+  if (qrImageEl) qrImageEl.removeAttribute("src");
+
+  const res = await apiFetch("/auth/qr", { method: "POST" });
+  const data = await safeJson(res);
+
+  if (generation !== pollGeneration) return;
+
+  if (data.status !== "qr_pending" || !data.qr_image) {
+    setQrError(data.error || "Не вдалося згенерувати QR-код. Спробуй ще раз.");
+    return;
+  }
+
+  renderQr(data);
+  if (qrStatusTextEl) qrStatusTextEl.textContent = "Очікую на сканування…";
+  pollLoop(generation);
+}
 
 function isNonEmptyPassword(value) {
   return value.length > 0;

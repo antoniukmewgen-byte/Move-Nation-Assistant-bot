@@ -61,8 +61,20 @@ class FakeMessage:
         self.answers.append(text)
         return self
 
+    async def answer_photo(self, _photo: Any, caption: str | None = None, **_kwargs: Any) -> FakeMessage:
+        self.answers.append(caption or "")
+        return self
+
     async def edit_text(self, text: str, **_kwargs: Any) -> FakeMessage:
         self.edits.append(text)
+        return self
+
+    async def edit_media(self, _media: Any, **_kwargs: Any) -> FakeMessage:
+        self.edits.append("<media>")
+        return self
+
+    async def edit_caption(self, caption: str, **_kwargs: Any) -> FakeMessage:
+        self.edits.append(caption)
         return self
 
     async def delete(self) -> None:

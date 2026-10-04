@@ -7,6 +7,7 @@ import { renderRoleList } from "./role-list.js";
 import { getTotalSteps, resetPasswordStepNeeded } from "./progress.js";
 import { showToast } from "./toast.js";
 import { enterMainApp } from "./mainApp.js";
+import { startQrLogin } from "./connect.js";
 
 // --- Onboarding: role -> phone -> code -> (optional) 2FA password, all as
 // one animated stepper inside #role-step (DESIGN's registration.js layout),
@@ -125,6 +126,7 @@ if (roleListEl) {
       await submitRole(button.dataset.roleName);
       buttons.forEach((btn) => btn.setAttribute("aria-checked", String(btn === button)));
       goToStep(2);
+      startQrLogin();
     } catch (error) {
       showToast(error instanceof Error ? error.message : String(error), "error");
     } finally {

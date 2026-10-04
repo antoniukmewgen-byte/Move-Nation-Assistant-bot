@@ -1,6 +1,5 @@
-// Ported from DESIGN's step-header.js as an ES module. Text content is
-// already accurate for the real flow (role -> connect Telegram account ->
-// SMS code -> optional 2FA password), so it's carried over verbatim.
+// Text content for the real flow: role -> connect Telegram account via QR
+// login -> optional 2FA password.
 
 const STEP_HEADERS = [
   {
@@ -9,11 +8,7 @@ const STEP_HEADERS = [
   },
   {
     title: "Підключи аккаунт",
-    description: "Потрібно один раз авторизувати твій особистий Telegram, щоб бот міг створювати групи та додавати клієнтів від твого імені.",
-  },
-  {
-    title: "Введи код із Telegram",
-    description: "Код дійсний кілька хвилин — перевір повідомлення від Telegram.",
+    description: "Відскануй QR-код іншим пристроєм з Telegram (Налаштування → Пристрої → Підключити пристрій) або відкрий посилання на цьому ж телефоні.",
   },
   {
     title: "Введи пароль двоетапної перевірки",

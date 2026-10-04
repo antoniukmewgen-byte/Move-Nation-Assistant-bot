@@ -9,3 +9,4 @@ apscheduler==3.11.3
 python-dotenv==1.2.2
 cryptography==49.0.0
 alembic==1.18.5
+qrcode[pil]==8.2

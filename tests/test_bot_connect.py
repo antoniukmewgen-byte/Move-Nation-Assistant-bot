@@ -1,9 +1,9 @@
 """Tests for `/connect` (app/bot/handlers/connect.py).
 
-The phone/code/password state-machine logic itself is already exercised
-against a fake Telethon client in `tests/test_telethon_auth.py`; these tests
-only cover the handler layer's own job — FSM state transitions and the
-message sent back to the user for each `AuthStepResult`, so
+The QR/password state-machine logic itself is already exercised against a
+fake Telethon client in `tests/test_telethon_auth.py`; these tests only
+cover the handler layer's own job — FSM state transitions and the messages
+sent back to the user for each `AuthStepResult`, so
 `app.services.telethon_auth`'s functions are monkeypatched directly.
 """
 
@@ -18,96 +18,139 @@ from tests.bot_fakes import FakeChat, FakeMessage, FakeUser, make_fsm_context
 pytestmark = pytest.mark.asyncio
 
 
-async def test_cmd_connect_sets_waiting_for_phone_state() -> None:
+async def test_cmd_connect_sends_qr_and_sets_waiting_state(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def fake_start_qr_auth(*_args):
+        return AuthStepResult(status="qr_pending", qr_url="tg://login?token=abc")
+
+    async def fake_poll_qr_auth(_user_id):
+        return AuthStepResult(status="waiting")
+
+    monkeypatch.setattr(telethon_auth, "start_qr_auth", fake_start_qr_auth)
+    monkeypatch.setattr(telethon_auth, "poll_qr_auth", fake_poll_qr_auth)
+
+    message = FakeMessage(chat=FakeChat(id=1), from_user=FakeUser(id=1))
+    state = make_fsm_context()
+
+    try:
+        await connect_handlers.cmd_connect(message, state)
+
+        assert await state.get_state() == Connect.waiting_for_qr_scan
+        assert len(message.answers) == 1
+        assert 1 in connect_handlers._poll_tasks
+    finally:
+        connect_handlers._cancel_poll_task(1)
+
+
+async def test_cmd_connect_error_reports_and_clears_state(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def fake_start_qr_auth(*_args):
+        return AuthStepResult(status="error", error="Не вдалося згенерувати QR-код.")
+
+    monkeypatch.setattr(telethon_auth, "start_qr_auth", fake_start_qr_auth)
+
     message = FakeMessage(chat=FakeChat(id=1), from_user=FakeUser(id=1))
     state = make_fsm_context()
 
     await connect_handlers.cmd_connect(message, state)
 
-    assert await state.get_state() == Connect.waiting_for_phone
-    assert len(message.answers) == 1
-
-
-async def test_process_phone_success_moves_to_waiting_for_code(monkeypatch: pytest.MonkeyPatch) -> None:
-    async def fake_start_phone_auth(*_args):
-        return AuthStepResult(status="code_sent")
-
-    monkeypatch.setattr(telethon_auth, "start_phone_auth", fake_start_phone_auth)
-
-    message = FakeMessage(chat=FakeChat(id=1), from_user=FakeUser(id=1), text="+380123456789")
-    state = make_fsm_context()
-    await state.set_state(Connect.waiting_for_phone)
-
-    await connect_handlers.process_phone(message, state)
-
-    assert await state.get_state() == Connect.waiting_for_code
-    assert "код" in message.answers[0].lower()
-
-
-async def test_process_phone_error_clears_state_and_reports_error(monkeypatch: pytest.MonkeyPatch) -> None:
-    async def fake_start_phone_auth(*_args):
-        return AuthStepResult(status="error", error="Некоректний номер телефону.")
-
-    monkeypatch.setattr(telethon_auth, "start_phone_auth", fake_start_phone_auth)
-
-    message = FakeMessage(chat=FakeChat(id=1), from_user=FakeUser(id=1), text="123")
-    state = make_fsm_context()
-    await state.set_state(Connect.waiting_for_phone)
-
-    await connect_handlers.process_phone(message, state)
-
     assert await state.get_state() is None
-    assert "Некоректний номер телефону." in message.answers[0]
+    assert "Не вдалося згенерувати QR-код." in message.answers[0]
+    assert 1 not in connect_handlers._poll_tasks
 
 
-async def test_process_code_success_clears_state(monkeypatch: pytest.MonkeyPatch) -> None:
-    async def fake_submit_code(*_args):
-        return AuthStepResult(status="connected")
-
-    monkeypatch.setattr(telethon_auth, "submit_code", fake_submit_code)
-
-    message = FakeMessage(chat=FakeChat(id=1), from_user=FakeUser(id=1), text="12345")
-    state = make_fsm_context()
-    await state.set_state(Connect.waiting_for_code)
-
-    await connect_handlers.process_code(message, state)
-
-    assert await state.get_state() is None
-    assert message.deleted is True
-    assert "підключено" in message.answers[0].lower()
-
-
-async def test_process_code_password_required_moves_to_waiting_for_password(
+async def test_poll_loop_reports_waiting_status_without_leaving_the_loop(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    async def fake_submit_code(*_args):
+    results = [AuthStepResult(status="waiting"), AuthStepResult(status="connected")]
+
+    async def fake_poll_qr_auth(_user_id):
+        return results.pop(0)
+
+    monkeypatch.setattr(telethon_auth, "poll_qr_auth", fake_poll_qr_auth)
+
+    sent = FakeMessage(chat=FakeChat(id=1), from_user=FakeUser(id=1))
+    state = make_fsm_context()
+    await state.set_state(Connect.waiting_for_qr_scan)
+
+    await connect_handlers._poll_loop(1, state, sent)
+
+    assert not results
+    assert await state.get_state() is None
+
+
+async def test_poll_loop_qr_renewed_updates_the_photo_and_keeps_polling(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    results = [
+        AuthStepResult(status="qr_renewed", qr_url="tg://login?token=new"),
+        AuthStepResult(status="connected"),
+    ]
+
+    async def fake_poll_qr_auth(_user_id):
+        return results.pop(0)
+
+    monkeypatch.setattr(telethon_auth, "poll_qr_auth", fake_poll_qr_auth)
+
+    sent = FakeMessage(chat=FakeChat(id=1), from_user=FakeUser(id=1))
+    state = make_fsm_context()
+    await state.set_state(Connect.waiting_for_qr_scan)
+
+    await connect_handlers._poll_loop(1, state, sent)
+
+    assert not results
+    assert sent.edits  # the QR photo was replaced with the renewed one
+
+
+async def test_poll_loop_password_required_moves_to_waiting_for_password(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def fake_poll_qr_auth(_user_id):
         return AuthStepResult(status="password_required")
 
-    monkeypatch.setattr(telethon_auth, "submit_code", fake_submit_code)
+    monkeypatch.setattr(telethon_auth, "poll_qr_auth", fake_poll_qr_auth)
 
-    message = FakeMessage(chat=FakeChat(id=1), from_user=FakeUser(id=1), text="12345")
+    sent = FakeMessage(chat=FakeChat(id=1), from_user=FakeUser(id=1))
     state = make_fsm_context()
-    await state.set_state(Connect.waiting_for_code)
+    await state.set_state(Connect.waiting_for_qr_scan)
 
-    await connect_handlers.process_code(message, state)
+    await connect_handlers._poll_loop(1, state, sent)
 
     assert await state.get_state() == Connect.waiting_for_password
+    assert "пароль" in sent.answers[-1].lower()
 
 
-async def test_process_code_error_clears_state(monkeypatch: pytest.MonkeyPatch) -> None:
-    async def fake_submit_code(*_args):
-        return AuthStepResult(status="error", error="Код невірний або застарів. Почни знову.")
+async def test_poll_loop_connected_edits_caption_and_clears_state(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def fake_poll_qr_auth(_user_id):
+        return AuthStepResult(status="connected")
 
-    monkeypatch.setattr(telethon_auth, "submit_code", fake_submit_code)
+    monkeypatch.setattr(telethon_auth, "poll_qr_auth", fake_poll_qr_auth)
 
-    message = FakeMessage(chat=FakeChat(id=1), from_user=FakeUser(id=1), text="00000")
+    sent = FakeMessage(chat=FakeChat(id=1), from_user=FakeUser(id=1))
     state = make_fsm_context()
-    await state.set_state(Connect.waiting_for_code)
+    await state.set_state(Connect.waiting_for_qr_scan)
 
-    await connect_handlers.process_code(message, state)
+    await connect_handlers._poll_loop(1, state, sent)
 
     assert await state.get_state() is None
-    assert "Код невірний або застарів." in message.answers[0]
+    assert sent.edits[-1] == "Акаунт підключено!"
+    assert "newgroup" in sent.answers[-1].lower() or "міні-застосунок" in sent.answers[-1].lower()
+
+
+async def test_poll_loop_error_clears_state_and_reports(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def fake_poll_qr_auth(_user_id):
+        return AuthStepResult(status="error", error="Не вдалося увійти.")
+
+    monkeypatch.setattr(telethon_auth, "poll_qr_auth", fake_poll_qr_auth)
+
+    sent = FakeMessage(chat=FakeChat(id=1), from_user=FakeUser(id=1))
+    state = make_fsm_context()
+    await state.set_state(Connect.waiting_for_qr_scan)
+
+    await connect_handlers._poll_loop(1, state, sent)
+
+    assert await state.get_state() is None
+    assert "Не вдалося увійти." in sent.answers[-1]
 
 
 async def test_process_password_success_clears_state(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -125,3 +168,19 @@ async def test_process_password_success_clears_state(monkeypatch: pytest.MonkeyP
     assert await state.get_state() is None
     assert message.deleted is True
     assert "підключено" in message.answers[0].lower()
+
+
+async def test_process_password_error_clears_state(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def fake_submit_password(*_args):
+        return AuthStepResult(status="error", error="Пароль невірний.")
+
+    monkeypatch.setattr(telethon_auth, "submit_password", fake_submit_password)
+
+    message = FakeMessage(chat=FakeChat(id=1), from_user=FakeUser(id=1), text="wrong")
+    state = make_fsm_context()
+    await state.set_state(Connect.waiting_for_password)
+
+    await connect_handlers.process_password(message, state)
+
+    assert await state.get_state() is None
+    assert "Пароль невірний." in message.answers[0]
